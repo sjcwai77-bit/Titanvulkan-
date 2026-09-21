@@ -109,32 +109,35 @@ jobs:
               "if(renderer_.ready()&&focused_)frame();",
               "if(renderer_.ready())frame();"
           )
-          ms = ms.replace(
-              """    void run(){
-        while(!app_->destroyRequested){
-            int events=0;android_poll_source* source=nullptr;
-            const int timeout=renderer_.ready()?0:-1;
-            while(ALooper_pollOnce(timeout,nullptr,&events,reinterpret_cast<void**>(&source))>=0){
-                if(source)source->process(app_,source);
-                if(app_->destroyRequested)return;
-            }
-            processInput();
-            if(renderer_.ready())frame();
-        }
-    }""",
-              """    void run(){
-        while(!app_->destroyRequested){
-            int events=0;
-            android_poll_source* source=nullptr;
-            const int timeout=renderer_.ready()?0:-1;
-            const int ident=ALooper_pollOnce(timeout,nullptr,&events,reinterpret_cast<void**>(&source));
-            if(ident>=0 && source)source->process(app_,source);
-            if(app_->destroyRequested)return;
-            processInput();
-            if(renderer_.ready())frame();
-        }
-    }"""
+          old_run = (
+              "    void run(){\n"
+              "        while(!app_->destroyRequested){\n"
+              "            int events=0;android_poll_source* source=nullptr;\n"
+              "            const int timeout=renderer_.ready()?0:-1;\n"
+              "            while(ALooper_pollOnce(timeout,nullptr,&events,reinterpret_cast<void**>(&source))>=0){\n"
+              "                if(source)source->process(app_,source);\n"
+              "                if(app_->destroyRequested)return;\n"
+              "            }\n"
+              "            processInput();\n"
+              "            if(renderer_.ready())frame();\n"
+              "        }\n"
+              "    }"
           )
+          new_run = (
+              "    void run(){\n"
+              "        while(!app_->destroyRequested){\n"
+              "            int events=0;\n"
+              "            android_poll_source* source=nullptr;\n"
+              "            const int timeout=renderer_.ready()?0:-1;\n"
+              "            const int ident=ALooper_pollOnce(timeout,nullptr,&events,reinterpret_cast<void**>(&source));\n"
+              "            if(ident>=0 && source)source->process(app_,source);\n"
+              "            if(app_->destroyRequested)return;\n"
+              "            processInput();\n"
+              "            if(renderer_.ready())frame();\n"
+              "        }\n"
+              "    }"
+          )
+          ms = ms.replace(old_run,new_run)
           ms = ms.replace(
               "bool touchDown_=false;",
               "bool firstFrameReported_=false;\n    bool touchDown_=false;"
