@@ -42,6 +42,9 @@
      MeshCpu m; m.name="North Atlantic";m.materialType=2.0f;
 -    const int n=128;const float extent=260.0f;const Vec3 col=C(.025f,.18f,.32f);
 +    const int n=184;const float extent=360.0f;const Vec3 col=C(.018f,.12f,.22f);
+     for(int z=0;z<=n;z++)for(int x=0;x<=n;x++){
+         float fx=-extent+2*extent*x/n,fz=-extent+2*extent*z/n;
+         m.vertices.push_back({{fx,0,fz},{0,1,0},col});
 @@ -185,9 +203,9 @@
      auto windows=[&](float x)->MeshCpu&{return x>5?bw:(x<-7?sw:mw);};
  
@@ -51,12 +54,20 @@
      addHullSide(mid,-7,5,-4.7f,.05f,red,18,12);addHullSide(mid,-7,5,-.05f,3.72f,black,18,9);addDeckTop(mid,-7,5,3.82f,deck,16);
 -    addHullSide(bow,5,44,-4.7f,.05f,red,45,12);addHullSide(bow,5,44,-.05f,3.72f,black,45,9);addDeckTop(bow,5,44,3.82f,deck,38);
 +    addHullSide(bow,5,44,-4.7f,.05f,red,88,22);addHullSide(bow,5,44,-.05f,3.72f,black,88,18);addDeckTop(bow,5,44,3.82f,deck,76);
+ 
+     // Superstructure deck blocks, split cleanly at the structural-break zones.
+     const std::array<std::array<float,5>,3> tiers={{{-34,30,5.0f,1.45f,7.6f},{-30,27,6.52f,1.32f,7.15f},{-25,23,7.92f,1.10f,6.45f}}};
 @@ -215,7 +233,7 @@
+ 
      // Four raked funnels, using the historical silhouette rather than generic chimneys.
      const std::array<float,4> funnelX={14.5f,4.5f,-6.0f,-17.0f};
 -    for(float x:funnelX){MeshCpu& sm=section(x);addCylinder(sm,{x,13.75f,0},1.70f,1.52f,6.25f,32,buff,-radians(9.5f),.79f);addCylinder(sm,{x-.10f,16.48f,0},1.57f,1.57f,1.12f,32,funnelBlack,-radians(9.5f),.79f);}
 +    for(float x:funnelX){MeshCpu& sm=section(x);addCylinder(sm,{x,13.75f,0},1.70f,1.52f,6.25f,48,buff,-radians(9.5f),.79f);addCylinder(sm,{x-.10f,16.48f,0},1.57f,1.57f,1.12f,48,funnelBlack,-radians(9.5f),.79f);}
+ 
+     // Masts, boat-deck houses, vents, rails.
+     addCylinder(bow,{33.4f,14.2f,0},.17f,.09f,13.2f,16,C(.28f,.18f,.10f),-radians(4));
 @@ -232,9 +250,21 @@
+ 
      // Twenty lifeboats: 16 rigid, 4 collapsibles. Geometric detail is deliberately visible from deck-level camera distances.
      const std::array<float,8> boatX={-24,-19,-14,-9,-2,4,10,16};
 -    for(float side:{-1.0f,1.0f})for(float x:boatX){MeshCpu& sm=section(x);addEllipsoid(sm,{x,9.48f,side*3.78f},{2.10f,.42f,.65f},6,18,C(.78f,.74f,.67f));for(float xx=-1.35f;xx<=1.35f;xx+=.54f)addBox(sm,{x+xx,9.78f,side*3.78f},{.045f,.05f,1.02f},C(.34f,.22f,.13f));}
@@ -75,7 +86,12 @@
 +    for(float z:{-2.75f,2.75f})for(float x=22.5f;x<=26.5f;x+=.55f)addBox(bw,{x,10.45f,z},{.34f,.42f,.06f},C(.12f,.26f,.34f));
 +    addBox(bow,{24.1f,10.20f,3.75f},{5.6f,.18f,1.55f},white);addBox(bow,{24.1f,10.20f,-3.75f},{5.6f,.18f,1.55f},white);
 +
+     // Three propeller hubs and rudder geometry on the stern.
+     const Vec3 bronze=C(.48f,.32f,.13f);
+     addCylinder(stern,{-42.0f,-3.35f,0},.30f,.30f,.9f,18,bronze,radians(90));
 @@ -256,33 +286,31 @@
+ }
+ 
  void TitanicScene::buildStars(){
 -    MeshCpu m;m.name="1912 bright-star sky";m.materialType=3.0f;m.emission=1.3f;
 -    // Mid-sinking UTC: 1912-04-15 04:20 UTC. This is sufficient for the 160-minute sequence;
@@ -91,25 +107,37 @@
      for(const auto&s:kStars){
 -        // Precess J2000 catalogue coordinates back to the 1912 epoch before converting to local altitude/azimuth.
          double T=(jd-2451545.0)/36525.0;
-@@
+         float zeta=radians(float((2306.2181*T+.30188*T*T+.017998*T*T*T)/3600.0));
+         float zz=radians(float((2306.2181*T+1.09468*T*T+.018203*T*T*T)/3600.0));
+         float theta=radians(float((2004.3109*T-.42665*T*T-.041833*T*T*T)/3600.0));
 -        float ra0=radians(s.ra*15.0f),dec0=radians(s.dec);
 +        float ra0=radians(s.raDeg),dec0=radians(s.dec);
-@@
+         float A=std::cos(dec0)*std::sin(ra0+zeta);
+         float B=std::cos(theta)*std::cos(dec0)*std::cos(ra0+zeta)-std::sin(theta)*std::sin(dec0);
+         float Cc=std::sin(theta)*std::cos(dec0)*std::cos(ra0+zeta)+std::cos(theta)*std::sin(dec0);
 -        float ra=std::atan2(A,B)+zz; if(ra<0)ra+=2*kPi;
 -        float dec=std::asin(clampf(Cc,-1,1));
 -        float H=lst-ra;
 +        float ra=std::atan2(A,B)+zz;if(ra<0)ra+=2*kPi;
 +        float dec=std::asin(clampf(Cc,-1,1));float H=lst-ra;
-@@
+         float sinAlt=std::sin(dec)*std::sin(lat)+std::cos(dec)*std::cos(lat)*std::cos(H);
 -        float alt=std::asin(clampf(sinAlt,-1,1));if(alt<=0)continue;
 +        float alt=std::asin(clampf(sinAlt,-1,1));if(alt<=radians(-1.0f))continue;
-@@
+         float ca=std::max(1e-5f,std::cos(alt));
+         float az=std::atan2(-std::cos(dec)*std::sin(H)/ca,(std::sin(dec)-std::sin(alt)*std::sin(lat))/(ca*std::cos(lat)));if(az<0)az+=2*kPi;
+         float rc=std::cos(alt)*R;Vec3 p={std::sin(az)*rc,std::sin(alt)*R,-std::cos(az)*rc};
 -        float size=clampf(.22f-s.mag*.025f,.08f,.28f);
 -        addEllipsoid(m,p,{size,size,size},3,6,C(1.0f,.98f,.92f));
 +        float size=clampf(.18f+(5.3f-s.mag)*.105f,.16f,.95f);
 +        if(s.mag<1.0f)size*=1.24f;
 +        addEllipsoid(m,p,{size,size,size},3,7,starColor(s.bv));
+     }
+     stars_=int(meshes_.size());meshes_.push_back(std::move(m));
+ }
 @@ -347,7 +375,7 @@
+     meshes_[sternWindows_].emission=1.25f*power;meshes_[midWindows_].emission=1.25f*power;meshes_[bowWindows_].emission=1.25f*power;
+ 
+     // Ocean and stars are world anchored.
 -    meshes_[ocean_].model=Mat4::identity();meshes_[stars_].model=Mat4::identity();
 +    meshes_[sky_].model=Mat4::identity();meshes_[ocean_].model=Mat4::identity();meshes_[stars_].model=Mat4::identity();
  }
