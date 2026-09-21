@@ -55,10 +55,15 @@ jobs:
           from pathlib import Path
           p = Path("TitanicVulkanAndroid/app/build.gradle")
           s = p.read_text()
-          dep = "    implementation 'androidx.core:core:1.17.0'\n"
-          if "androidx.core:core:" not in s:
-              s = s.replace("dependencies {\n", "dependencies {\n" + dep)
-              p.write_text(s)
+          deps = [
+              "    implementation 'androidx.core:core:1.17.0'\n",
+              "    implementation 'androidx.appcompat:appcompat:1.7.1'\n",
+          ]
+          for dep in reversed(deps):
+              marker = dep.split("'")[1].split(":")[1]
+              if marker not in s:
+                  s = s.replace("dependencies {\n", "dependencies {\n" + dep)
+          p.write_text(s)
           PY
 
       - name: Set up Gradle
