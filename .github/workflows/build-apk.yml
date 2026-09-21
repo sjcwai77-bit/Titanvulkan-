@@ -64,6 +64,31 @@ jobs:
               if marker not in s:
                   s = s.replace("dependencies {\n", "dependencies {\n" + dep)
           p.write_text(s)
+
+          # GameActivity derives from AppCompatActivity, so it must use an
+          # AppCompat-based theme. The original platform Theme.Material causes
+          # an immediate crash in AppCompatActivity.onCreate().
+          manifest = Path("TitanicVulkanAndroid/app/src/main/AndroidManifest.xml")
+          m = manifest.read_text()
+          m = m.replace(
+              'android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"',
+              'android:theme="@style/Application.Fullscreen"'
+          )
+          manifest.write_text(m)
+
+          values = Path("TitanicVulkanAndroid/app/src/main/res/values")
+          values.mkdir(parents=True, exist_ok=True)
+          (values / "themes.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Application.Fullscreen" parent="Theme.AppCompat.Light.NoActionBar">
+                  <item name="android:windowFullscreen">true</item>
+                  <item name="android:windowContentOverlay">@null</item>
+                  <item name="android:windowBackground">@android:color/black</item>
+                  <item name="windowActionModeOverlay">true</item>
+                  <item name="windowNoTitle">true</item>
+              </style>
+          </resources>
+          """)
           PY
 
       - name: Set up Gradle
