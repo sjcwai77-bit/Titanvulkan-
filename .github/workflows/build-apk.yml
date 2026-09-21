@@ -1,11 +1,12 @@
-name: Build Android APK
+name: Build Titanic Vulkan Build 2
 
 on:
   workflow_dispatch:
   push:
     branches: [ "main" ]
     paths:
-      - "source_parts/**"
+      - "build2_overlay/**"
+      - "stars.inc"
       - ".github/workflows/build-apk.yml"
 
 permissions:
@@ -35,50 +36,33 @@ jobs:
             SDKMANAGER="$(command -v sdkmanager)"
           fi
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0" \
-            "ndk;28.2.13676358" \
-            "cmake;3.22.1"
+          "$SDKMANAGER"             "platform-tools"             "platforms;android-36"             "build-tools;36.0.0"             "ndk;28.2.13676358"             "cmake;3.22.1"
 
-      - name: Reconstruct Titanic Vulkan source
+      - name: Reconstruct known-good Vulkan base
         shell: bash
         run: |
           set -euo pipefail
           cat source_parts/part*.b64 > TitanicVulkanAndroid_Source.zip.b64
           base64 --decode TitanicVulkanAndroid_Source.zip.b64 > TitanicVulkanAndroid_Source.zip
           unzip -q TitanicVulkanAndroid_Source.zip
-          test -f TitanicVulkanAndroid/settings.gradle
           test -f TitanicVulkanAndroid/app/src/main/cpp/vulkan_renderer.cpp
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("TitanicVulkanAndroid/app/build.gradle")
-          s = p.read_text()
-          deps = [
-              "    implementation 'androidx.core:core:1.17.0'\n",
-              "    implementation 'androidx.appcompat:appcompat:1.7.1'\n",
-          ]
-          for dep in reversed(deps):
-              marker = dep.split("'")[1].split(":")[1]
-              if marker not in s:
-                  s = s.replace("dependencies {\n", "dependencies {\n" + dep)
-          p.write_text(s)
+          test -f TitanicVulkanAndroid/app/src/main/cpp/titanic_scene.cpp
 
-          # GameActivity derives from AppCompatActivity, so it must use an
-          # AppCompat-based theme. The original platform Theme.Material causes
-          # an immediate crash in AppCompatActivity.onCreate().
-          manifest = Path("TitanicVulkanAndroid/app/src/main/AndroidManifest.xml")
-          m = manifest.read_text()
-          m = m.replace(
-              'android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"',
-              'android:theme="@style/Application.Fullscreen"'
-          )
-          manifest.write_text(m)
+      - name: Apply Build 2 makeover
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp build2_overlay/main.cpp TitanicVulkanAndroid/app/src/main/cpp/main.cpp
+          cp build2_overlay/titanic_scene.hpp TitanicVulkanAndroid/app/src/main/cpp/titanic_scene.hpp
+          cp build2_overlay/MainActivity.java TitanicVulkanAndroid/app/src/main/java/com/sjcw/titanicvulkan/MainActivity.java
+          cp build2_overlay/app_build.gradle TitanicVulkanAndroid/app/build.gradle
+          cp build2_overlay/scene.vert TitanicVulkanAndroid/app/src/main/shaders/scene.vert
+          cp build2_overlay/scene.frag TitanicVulkanAndroid/app/src/main/shaders/scene.frag
+          cp stars.inc TitanicVulkanAndroid/app/src/main/cpp/stars.inc
 
-          values = Path("TitanicVulkanAndroid/app/src/main/res/values")
-          values.mkdir(parents=True, exist_ok=True)
-          (values / "themes.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+          mkdir -p TitanicVulkanAndroid/app/src/main/res/values
+          cat > TitanicVulkanAndroid/app/src/main/res/values/themes.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <style name="Application.Fullscreen" parent="Theme.AppCompat.Light.NoActionBar">
                   <item name="android:windowFullscreen">true</item>
@@ -88,141 +72,21 @@ jobs:
                   <item name="windowNoTitle">true</item>
               </style>
           </resources>
-          """)
+          EOF
 
-          # Android/Vulkan runtime hardening and visible diagnostics.
-          main = Path("TitanicVulkanAndroid/app/src/main/cpp/main.cpp")
-          ms = main.read_text()
-          ms = ms.replace("#include <cmath>\n", "#include <cmath>\n#include <jni.h>\n#include <mutex>\n#include <string>\n")
-          ms = ms.replace(
-              "#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,TAG,__VA_ARGS__)\n",
-              "#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,TAG,__VA_ARGS__)\n\n"
-              "std::mutex gStatusMutex;\n"
-              "std::string gStatus = \"Native thread starting\";\n"
-              "void setStatus(const char* s){ std::lock_guard<std::mutex> lock(gStatusMutex); gStatus=s; LOGI(\"STATUS: %s\",s); }\n"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("TitanicVulkanAndroid/app/src/main/AndroidManifest.xml")
+          s=p.read_text().replace(
+              "@android:style/Theme.Material.NoActionBar.Fullscreen",
+              "@style/Application.Fullscreen"
           )
-          ms = ms.replace(
-              "const int timeout=(renderer_.ready()&&focused_)?0:-1;",
-              "const int timeout=renderer_.ready()?0:-1;"
-          )
-          ms = ms.replace(
-              "if(renderer_.ready()&&focused_)frame();",
-              "if(renderer_.ready())frame();"
-          )
-          old_run = (
-              "    void run(){\n"
-              "        while(!app_->destroyRequested){\n"
-              "            int events=0;android_poll_source* source=nullptr;\n"
-              "            const int timeout=renderer_.ready()?0:-1;\n"
-              "            while(ALooper_pollOnce(timeout,nullptr,&events,reinterpret_cast<void**>(&source))>=0){\n"
-              "                if(source)source->process(app_,source);\n"
-              "                if(app_->destroyRequested)return;\n"
-              "            }\n"
-              "            processInput();\n"
-              "            if(renderer_.ready())frame();\n"
-              "        }\n"
-              "    }"
-          )
-          new_run = (
-              "    void run(){\n"
-              "        while(!app_->destroyRequested){\n"
-              "            int events=0;\n"
-              "            android_poll_source* source=nullptr;\n"
-              "            const int timeout=renderer_.ready()?0:-1;\n"
-              "            const int ident=ALooper_pollOnce(timeout,nullptr,&events,reinterpret_cast<void**>(&source));\n"
-              "            if(ident>=0 && source)source->process(app_,source);\n"
-              "            if(app_->destroyRequested)return;\n"
-              "            processInput();\n"
-              "            if(renderer_.ready())frame();\n"
-              "        }\n"
-              "    }"
-          )
-          ms = ms.replace(old_run,new_run)
-          ms = ms.replace(
-              "bool touchDown_=false;",
-              "bool firstFrameReported_=false;\n    bool touchDown_=false;"
-          )
-          ms = ms.replace(
-              "if(!renderer_.init(app_->window,app_->activity->assetManager,scene_.meshes()))LOGE(\"Renderer init failed\");\n                    else LOGI(\"Vulkan surface %dx%d\",ANativeWindow_getWidth(app_->window),ANativeWindow_getHeight(app_->window));",
-              "setStatus(\"Creating Vulkan renderer\");\n"
-              "                    if(!renderer_.init(app_->window,app_->activity->assetManager,scene_.meshes())){ LOGE(\"Renderer init failed\"); setStatus(\"Vulkan renderer initialization FAILED\"); }\n"
-              "                    else { LOGI(\"Vulkan surface %dx%d\",ANativeWindow_getWidth(app_->window),ANativeWindow_getHeight(app_->window)); setStatus(\"Vulkan ready - presenting first frame\"); }"
-          )
-          ms = ms.replace(
-              "case APP_CMD_GAINED_FOCUS:\n                focused_=true;lastFrame_=std::chrono::steady_clock::now();break;",
-              "case APP_CMD_START:\n"
-              "            case APP_CMD_RESUME:\n"
-              "            case APP_CMD_GAINED_FOCUS:\n"
-              "                focused_=true;lastFrame_=std::chrono::steady_clock::now();break;"
-          )
-          ms = ms.replace(
-              "renderer_.draw(scene_.meshes(),vp,cam,presentationTime_);",
-              "bool ok=renderer_.draw(scene_.meshes(),vp,cam,presentationTime_);\n"
-              "        if(!firstFrameReported_){ setStatus(ok?\"Vulkan rendering\":\"Vulkan draw/present FAILED\"); firstFrameReported_=ok; }"
-          )
-          ms += """
-          
-          extern "C" JNIEXPORT jstring JNICALL
-          Java_com_sjcw_titanicvulkan_MainActivity_nativeStatus(JNIEnv* env, jclass) {
-              std::lock_guard<std::mutex> lock(gStatusMutex);
-              return env->NewStringUTF(gStatus.c_str());
-          }
-          """
-          main.write_text(ms)
-
-          vr = Path("TitanicVulkanAndroid/app/src/main/cpp/vulkan_renderer.cpp")
-          rs = vr.read_text()
-          rs = rs.replace(
-              "ci.preTransform=caps.currentTransform;ci.compositeAlpha=VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;ci.presentMode=VK_PRESENT_MODE_FIFO_KHR;ci.clipped=VK_TRUE;",
-              "ci.preTransform=caps.currentTransform;"
-              "VkCompositeAlphaFlagBitsKHR alpha=VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;"
-              "const VkCompositeAlphaFlagBitsKHR candidates[]={VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR};"
-              "for(auto a:candidates){if(caps.supportedCompositeAlpha&a){alpha=a;break;}}"
-              "ci.compositeAlpha=alpha;ci.presentMode=VK_PRESENT_MODE_FIFO_KHR;ci.clipped=VK_TRUE;"
-          )
-          rs = rs.replace(
-              "clear[0].color={{.012f,.035f,.065f,1.0f}};",
-              "clear[0].color={{.018f,.085f,.18f,1.0f}};"
-          )
-          vr.write_text(rs)
-
-          java = Path("TitanicVulkanAndroid/app/src/main/java/com/sjcw/titanicvulkan/MainActivity.java")
-          js = java.read_text()
-          js = js.replace(
-              "import android.os.Bundle;\n",
-              "import android.os.Bundle;\nimport android.os.Handler;\nimport android.os.Looper;\nimport android.graphics.Color;\nimport android.view.Gravity;\nimport android.view.ViewGroup;\nimport android.widget.TextView;\n"
-          )
-          js = js.replace(
-              "public class MainActivity extends GameActivity {\n",
-              "public class MainActivity extends GameActivity {\n"
-              "    private static native String nativeStatus();\n"
-              "    private TextView statusView;\n"
-              "    private final Handler statusHandler = new Handler(Looper.getMainLooper());\n"
-              "    private final Runnable statusPoll = new Runnable() {\n"
-              "        @Override public void run() {\n"
-              "            if (statusView == null) return;\n"
-              "            String s; try { s = nativeStatus(); } catch (Throwable t) { s = \"Native status unavailable\"; }\n"
-              "            statusView.setText(s);\n"
-              "            if (\"Vulkan rendering\".equals(s)) { statusView.postDelayed(() -> statusView.setVisibility(View.GONE), 1500); }\n"
-              "            else { statusHandler.postDelayed(this, 250); }\n"
-              "        }\n"
-              "    };\n"
-          )
-          js = js.replace(
-              "super.onCreate(savedInstanceState);\n        setImmersive();",
-              "super.onCreate(savedInstanceState);\n"
-              "        setImmersive();\n"
-              "        statusView = new TextView(this);\n"
-              "        statusView.setTextColor(Color.WHITE);\n"
-              "        statusView.setTextSize(17f);\n"
-              "        statusView.setGravity(Gravity.CENTER);\n"
-              "        statusView.setPadding(24,18,24,18);\n"
-              "        statusView.setBackgroundColor(0xCC8B0000);\n"
-              "        addContentView(statusView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));\n"
-              "        statusHandler.post(statusPoll);"
-          )
-          java.write_text(js)
+          p.write_text(s)
           PY
+
+          cd TitanicVulkanAndroid
+          patch -p1 < ../build2_overlay/scene.patch
+          patch -p1 < ../build2_overlay/renderer.patch
 
       - name: Compile Vulkan shaders to SPIR-V
         shell: bash
@@ -231,10 +95,8 @@ jobs:
           GLSLC="${ANDROID_HOME}/ndk/28.2.13676358/shader-tools/linux-x86_64/glslc"
           test -x "$GLSLC"
           mkdir -p TitanicVulkanAndroid/app/src/main/assets/shaders
-          "$GLSLC" -O TitanicVulkanAndroid/app/src/main/shaders/scene.vert \
-            -o TitanicVulkanAndroid/app/src/main/assets/shaders/scene.vert.spv
-          "$GLSLC" -O TitanicVulkanAndroid/app/src/main/shaders/scene.frag \
-            -o TitanicVulkanAndroid/app/src/main/assets/shaders/scene.frag.spv
+          "$GLSLC" -O TitanicVulkanAndroid/app/src/main/shaders/scene.vert             -o TitanicVulkanAndroid/app/src/main/assets/shaders/scene.vert.spv
+          "$GLSLC" -O TitanicVulkanAndroid/app/src/main/shaders/scene.frag             -o TitanicVulkanAndroid/app/src/main/assets/shaders/scene.frag.spv
           test -s TitanicVulkanAndroid/app/src/main/assets/shaders/scene.vert.spv
           test -s TitanicVulkanAndroid/app/src/main/assets/shaders/scene.frag.spv
 
@@ -243,22 +105,24 @@ jobs:
         with:
           gradle-version: "9.6.0"
 
-      - name: Build debug APK
+      - name: Build ARM64 APK
         working-directory: TitanicVulkanAndroid
         run: gradle :app:assembleDebug --stacktrace --no-daemon
 
-      - name: Verify shaders are packaged
+      - name: Verify Build 2 APK
         shell: bash
         run: |
           set -euo pipefail
           APK="TitanicVulkanAndroid/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
           unzip -l "$APK" | grep -q "assets/shaders/scene.vert.spv"
           unzip -l "$APK" | grep -q "assets/shaders/scene.frag.spv"
+          unzip -l "$APK" | grep -q "lib/arm64-v8a/libtitanic_vulkan.so"
 
-      - name: Upload APK
+      - name: Upload Build 2 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Titanic-Vulkan-APK
+          name: Titanic-Vulkan-Build2-APK
           path: TitanicVulkanAndroid/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
