@@ -110,6 +110,32 @@ jobs:
               "if(renderer_.ready())frame();"
           )
           ms = ms.replace(
+              """    void run(){
+        while(!app_->destroyRequested){
+            int events=0;android_poll_source* source=nullptr;
+            const int timeout=renderer_.ready()?0:-1;
+            while(ALooper_pollOnce(timeout,nullptr,&events,reinterpret_cast<void**>(&source))>=0){
+                if(source)source->process(app_,source);
+                if(app_->destroyRequested)return;
+            }
+            processInput();
+            if(renderer_.ready())frame();
+        }
+    }""",
+              """    void run(){
+        while(!app_->destroyRequested){
+            int events=0;
+            android_poll_source* source=nullptr;
+            const int timeout=renderer_.ready()?0:-1;
+            const int ident=ALooper_pollOnce(timeout,nullptr,&events,reinterpret_cast<void**>(&source));
+            if(ident>=0 && source)source->process(app_,source);
+            if(app_->destroyRequested)return;
+            processInput();
+            if(renderer_.ready())frame();
+        }
+    }"""
+          )
+          ms = ms.replace(
               "bool touchDown_=false;",
               "bool firstFrameReported_=false;\n    bool touchDown_=false;"
           )
