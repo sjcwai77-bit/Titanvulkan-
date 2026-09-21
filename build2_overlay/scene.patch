@@ -1,0 +1,117 @@
+--- a/app/src/main/cpp/titanic_scene.cpp
++++ b/app/src/main/cpp/titanic_scene.cpp
+@@ -139,9 +139,20 @@
+ float trimDeg(float m){return interp({{{0,.3f},{30,2.0f},{75,3.2f},{100,4.0f},{130,5.5f},{155,10.0f},{157,12.0f}}},m);}
+ float listDeg(float m){return interp({{{0,0},{55,.4f},{75,1.2f},{110,2.0f},{140,3.2f},{155,4.8f},{157,6.0f}}},m);}
+ 
+-// Bright-star J2000 catalogue: name omitted at runtime, RA hours, Dec degrees, magnitude.
+-struct StarDef{float ra,dec,mag;};
+-constexpr StarDef kStars[]={{2.5303f,89.2641f,1.97f},{11.0621f,61.7508f,1.79f},{11.0307f,56.3824f,2.34f},{11.8972f,53.6948f,2.43f},{12.2571f,57.0326f,3.31f},{12.9004f,55.9598f,1.76f},{13.3987f,54.9254f,2.06f},{13.7923f,49.3133f,1.85f},{5.2782f,45.9979f,.08f},{5.4382f,28.6075f,1.65f},{4.5987f,16.5093f,.87f},{5.9195f,7.4071f,.45f},{5.4189f,6.3497f,1.64f},{5.2423f,-8.2016f,.13f},{5.7959f,-9.6696f,2.06f},{5.6036f,-1.2019f,1.69f},{5.5334f,-.2991f,2.23f},{5.6793f,-1.9426f,1.74f},{6.7525f,-16.7161f,-1.46f},{7.655f,5.225f,.34f},{7.7553f,28.0262f,1.14f},{7.5767f,31.8883f,1.58f},{10.1395f,11.9672f,1.35f},{11.8177f,14.5721f,2.14f},{13.4199f,-11.1614f,.98f},{14.261f,19.1825f,-.05f},{18.6156f,38.7837f,.03f},{20.6905f,45.2803f,1.25f},{19.8464f,8.8683f,.77f},{16.4901f,-26.432f,1.06f},{3.4054f,49.8612f,1.79f},{3.1361f,40.9556f,2.12f},{22.9608f,-29.6222f,1.16f},{23.0794f,15.2053f,2.49f},{23.0629f,28.0828f,2.42f},{.1398f,29.0904f,2.07f},{1.1622f,35.6206f,2.05f},{2.065f,42.3297f,2.10f},{.6751f,56.5373f,2.24f},{.1529f,59.1498f,2.28f},{14.8451f,74.1555f,2.08f},{15.3455f,71.8339f,3.0f}};
++// Yale Bright Star Catalogue subset (J2000 RA/Dec degrees, V magnitude, B-V colour).
++// Generated at build time from the public-domain BSC5 data and kept locally in the APK source.
++struct StarDef{float raDeg,dec,mag,bv;};
++constexpr StarDef kStars[]={
++#include "stars.inc"
++};
++
++Vec3 starColor(float bv){
++    // Compact B-V -> RGB approximation: blue-white hot stars through amber K/M stars.
++    float t=clampf((bv+0.35f)/2.15f,0.0f,1.0f);
++    Vec3 hot={.72f,.84f,1.0f}, mid={1.0f,.98f,.91f}, cool={1.0f,.67f,.40f};
++    if(t<.48f){float q=t/.48f;return {lerpf(hot.x,mid.x,q),lerpf(hot.y,mid.y,q),lerpf(hot.z,mid.z,q)};}
++    float q=(t-.48f)/.52f;return {lerpf(mid.x,cool.x,q),lerpf(mid.y,cool.y,q),lerpf(mid.z,cool.z,q)};
++}
+ 
+ double jdFromUnixMs(double ms){return ms/86400000.0+2440587.5;}
+ float gmstDeg(double jd){double T=(jd-2451545.0)/36525.0;double g=280.46061837+360.98564736629*(jd-2451545.0)+.000387933*T*T-T*T*T/38710000.0;g=std::fmod(g,360.0);if(g<0)g+=360.0;return float(g);}
+@@ -155,11 +166,18 @@
+     return 155.0f+5.0f*((simSeconds_-286.0f)/14.0f);
+ }
+ 
+-void TitanicScene::build(){meshes_.clear();buildOcean();buildShip();buildStars();reset();}
++void TitanicScene::build(){meshes_.clear();buildSky();buildOcean();buildShip();buildStars();reset();}
++
++void TitanicScene::buildSky(){
++    MeshCpu m;m.name="Atlantic night sky";m.materialType=4.0f;
++    // Camera lives inside this sphere. Culling is disabled in the renderer.
++    addEllipsoid(m,{0,0,0},{560,560,560},18,72,C(.01f,.02f,.04f));
++    sky_=int(meshes_.size());meshes_.push_back(std::move(m));
++}
+ 
+ void TitanicScene::buildOcean(){
+     MeshCpu m; m.name="North Atlantic";m.materialType=2.0f;
+-    const int n=128;const float extent=260.0f;const Vec3 col=C(.025f,.18f,.32f);
++    const int n=184;const float extent=360.0f;const Vec3 col=C(.018f,.12f,.22f);
+@@ -185,9 +203,9 @@
+     auto windows=[&](float x)->MeshCpu&{return x>5?bw:(x<-7?sw:mw);};
+ 
+     for(auto* p:{&stern,&mid,&bow}){}
+-    addHullSide(stern,-44,-7,-4.7f,.05f,red,42,12);addHullSide(stern,-44,-7,-.05f,3.72f,black,42,9);addDeckTop(stern,-44,-7,3.82f,deck,36);
++    addHullSide(stern,-44,-7,-4.7f,.05f,red,82,22);addHullSide(stern,-44,-7,-.05f,3.72f,black,82,18);addDeckTop(stern,-44,-7,3.82f,deck,72);
+     addHullSide(mid,-7,5,-4.7f,.05f,red,18,12);addHullSide(mid,-7,5,-.05f,3.72f,black,18,9);addDeckTop(mid,-7,5,3.82f,deck,16);
+-    addHullSide(bow,5,44,-4.7f,.05f,red,45,12);addHullSide(bow,5,44,-.05f,3.72f,black,45,9);addDeckTop(bow,5,44,3.82f,deck,38);
++    addHullSide(bow,5,44,-4.7f,.05f,red,88,22);addHullSide(bow,5,44,-.05f,3.72f,black,88,18);addDeckTop(bow,5,44,3.82f,deck,76);
+@@ -215,7 +233,7 @@
+     // Four raked funnels, using the historical silhouette rather than generic chimneys.
+     const std::array<float,4> funnelX={14.5f,4.5f,-6.0f,-17.0f};
+-    for(float x:funnelX){MeshCpu& sm=section(x);addCylinder(sm,{x,13.75f,0},1.70f,1.52f,6.25f,32,buff,-radians(9.5f),.79f);addCylinder(sm,{x-.10f,16.48f,0},1.57f,1.57f,1.12f,32,funnelBlack,-radians(9.5f),.79f);}
++    for(float x:funnelX){MeshCpu& sm=section(x);addCylinder(sm,{x,13.75f,0},1.70f,1.52f,6.25f,48,buff,-radians(9.5f),.79f);addCylinder(sm,{x-.10f,16.48f,0},1.57f,1.57f,1.12f,48,funnelBlack,-radians(9.5f),.79f);}
+@@ -232,9 +250,21 @@
+     // Twenty lifeboats: 16 rigid, 4 collapsibles. Geometric detail is deliberately visible from deck-level camera distances.
+     const std::array<float,8> boatX={-24,-19,-14,-9,-2,4,10,16};
+-    for(float side:{-1.0f,1.0f})for(float x:boatX){MeshCpu& sm=section(x);addEllipsoid(sm,{x,9.48f,side*3.78f},{2.10f,.42f,.65f},6,18,C(.78f,.74f,.67f));for(float xx=-1.35f;xx<=1.35f;xx+=.54f)addBox(sm,{x+xx,9.78f,side*3.78f},{.045f,.05f,1.02f},C(.34f,.22f,.13f));}
++    for(float side:{-1.0f,1.0f})for(float x:boatX){MeshCpu& sm=section(x);addEllipsoid(sm,{x,9.48f,side*3.78f},{2.10f,.42f,.65f},8,28,C(.78f,.74f,.67f));for(float xx=-1.35f;xx<=1.35f;xx+=.54f)addBox(sm,{x+xx,9.78f,side*3.78f},{.045f,.05f,1.02f},C(.34f,.22f,.13f));}
+     for(float side:{-1.0f,1.0f})for(float x:{20.0f,24.0f})addBox(bow,{x,9.56f,side*2.2f},{3.5f,.35f,1.12f},C(.78f,.74f,.67f));
+ 
++    // Boat-deck skylights, deckhouses, vents, benches and rail details.
++    for(float x:{-23.f,-18.f,-13.f,-8.f,-2.f,4.f,10.f,16.f,21.f}){
++        MeshCpu& sm=section(x);addBox(sm,{x,10.25f,0},{2.1f,.24f,1.55f},C(.16f,.19f,.20f));
++        addBox(sm,{x,10.40f,0},{1.72f,.10f,1.20f},C(.52f,.58f,.60f));
++    }
++    for(float x=-27.f;x<25.f;x+=3.2f){MeshCpu& sm=section(x);addCylinder(sm,{x,10.65f,2.35f},.20f,.13f,.95f,16,white);addCylinder(sm,{x,10.65f,-2.35f},.20f,.13f,.95f,16,white);}
++    // Fine hull sheer stripe and deck-edge highlights make the silhouette read cleanly at distance.
++    for(float x=-39.f;x<39.f;x+=1.35f){MeshCpu& sm=section(x);float b=halfBeam(x);addBox(sm,{x,3.86f,b*.992f},{1.24f,.075f,.055f},C(.74f,.76f,.72f));addBox(sm,{x,3.86f,-b*.992f},{1.24f,.075f,.055f},C(.74f,.76f,.72f));}
++    // Bridge glazing and navigation wings.
++    for(float z:{-2.75f,2.75f})for(float x=22.5f;x<=26.5f;x+=.55f)addBox(bw,{x,10.45f,z},{.34f,.42f,.06f},C(.12f,.26f,.34f));
++    addBox(bow,{24.1f,10.20f,3.75f},{5.6f,.18f,1.55f},white);addBox(bow,{24.1f,10.20f,-3.75f},{5.6f,.18f,1.55f},white);
++
+@@ -256,33 +286,31 @@
+ void TitanicScene::buildStars(){
+-    MeshCpu m;m.name="1912 bright-star sky";m.materialType=3.0f;m.emission=1.3f;
+-    // Mid-sinking UTC: 1912-04-15 04:20 UTC. This is sufficient for the 160-minute sequence;
+-    // the apparent movement over the five-minute presentation is visually negligible.
+-    const double jd=2419507.68056; // close to 1912-04-15 04:20 UTC
++    MeshCpu m;m.name="1912 Yale bright-star sky";m.materialType=3.0f;m.emission=2.15f;
++    // Titanic's vicinity near the final sinking phase, 15 Apr 1912 ~04:20 UTC.
++    const double jd=2419507.68056;
+     const float lat=radians(41.7667f),lon=-50.2333f;
+     const float lst=radians(gmstDeg(jd)+lon);
+-    const float R=330.0f;
++    const float R=430.0f;
+     for(const auto&s:kStars){
+-        // Precess J2000 catalogue coordinates back to the 1912 epoch before converting to local altitude/azimuth.
+         double T=(jd-2451545.0)/36525.0;
+@@
+-        float ra0=radians(s.ra*15.0f),dec0=radians(s.dec);
++        float ra0=radians(s.raDeg),dec0=radians(s.dec);
+@@
+-        float ra=std::atan2(A,B)+zz; if(ra<0)ra+=2*kPi;
+-        float dec=std::asin(clampf(Cc,-1,1));
+-        float H=lst-ra;
++        float ra=std::atan2(A,B)+zz;if(ra<0)ra+=2*kPi;
++        float dec=std::asin(clampf(Cc,-1,1));float H=lst-ra;
+@@
+-        float alt=std::asin(clampf(sinAlt,-1,1));if(alt<=0)continue;
++        float alt=std::asin(clampf(sinAlt,-1,1));if(alt<=radians(-1.0f))continue;
+@@
+-        float size=clampf(.22f-s.mag*.025f,.08f,.28f);
+-        addEllipsoid(m,p,{size,size,size},3,6,C(1.0f,.98f,.92f));
++        float size=clampf(.18f+(5.3f-s.mag)*.105f,.16f,.95f);
++        if(s.mag<1.0f)size*=1.24f;
++        addEllipsoid(m,p,{size,size,size},3,7,starColor(s.bv));
+@@ -347,7 +375,7 @@
+-    meshes_[ocean_].model=Mat4::identity();meshes_[stars_].model=Mat4::identity();
++    meshes_[sky_].model=Mat4::identity();meshes_[ocean_].model=Mat4::identity();meshes_[stars_].model=Mat4::identity();
+ }
+ 
+ } // namespace tv
