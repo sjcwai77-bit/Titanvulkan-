@@ -26,14 +26,16 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android SDK, NDK and CMake
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager \
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0" \
@@ -43,6 +45,7 @@ jobs:
       - name: Reconstruct Titanic Vulkan source
         shell: bash
         run: |
+          set -euo pipefail
           cat source_parts/part*.b64 > TitanicVulkanAndroid_Source.zip.b64
           base64 --decode TitanicVulkanAndroid_Source.zip.b64 > TitanicVulkanAndroid_Source.zip
           unzip -q TitanicVulkanAndroid_Source.zip
