@@ -27,9 +27,9 @@ jobs:
       - name: Publish direct APK file
         run: |
           mkdir -p apk
-          cp SJCW-Torrent/app/build/outputs/apk/debug/app-debug.apk apk/SJCW-Torrent-v0.1.apk
+          cp SJCW-Torrent/app/build/outputs/apk/debug/app-debug.apk apk/SJCW-Torrent-2.apk
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add apk/SJCW-Torrent-v0.1.apk
+          git add apk/SJCW-Torrent-2.apk
           git commit -m "Publish installable torrent APK [skip ci]"
           git push origin HEAD:torrent-client
