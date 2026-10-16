@@ -83,23 +83,23 @@ public final class TorrentService extends Service {
   worker.execute(()->{
    try{
     if(manager==null)throw new IOException("Torrent engine is starting");
-    String hash;
+    String hash; String nameHint=friendlyName;
     if(src.startsWith("magnet:?")){
      Uri uri=Uri.parse(src);
      String xt=uri.getQueryParameter("xt");
      if(xt==null||!xt.toLowerCase(Locale.ROOT).startsWith("urn:btih:"))throw new IOException("Magnet link has no torrent hash");
      hash=xt.substring(9).toLowerCase(Locale.ROOT);
      if(!hash.matches("[a-f0-9]{40}"))throw new IOException("This version requires a 40-character magnet hash");
-     if(friendlyName==null||friendlyName.trim().isEmpty())friendlyName=uri.getQueryParameter("dn");
+     if(nameHint==null||nameHint.trim().isEmpty())nameHint=uri.getQueryParameter("dn");
     }else{
      File file=new File(src);
      if(!file.isFile())throw new IOException("Torrent file missing");
      TorrentInfo ti=new TorrentInfo(file);
      hash=ti.infoHashV1().toHex().toLowerCase(Locale.ROOT);
-     if(friendlyName==null||friendlyName.isEmpty())friendlyName=ti.name();
+     if(nameHint==null||nameHint.isEmpty())nameHint=ti.name();
     }
     if(queue.containsKey(hash)){reply.finished(false,"This torrent is already in your downloads.");return;}
-    Entry e=new Entry(hash,src,friendlyName==null?"":friendlyName);
+    Entry e=new Entry(hash,src,nameHint==null?"":nameHint);
     synchronized(this){queue.put(hash,e);saveQueue();}
     startTorrent(e);
     reply.finished(true,"Added "+displayName(hash,""));
