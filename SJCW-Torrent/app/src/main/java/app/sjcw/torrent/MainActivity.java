@@ -87,7 +87,7 @@ public class MainActivity extends Activity {
       TextView line=label(name+"\n"+(size>0?(size/1048576)+" MB • ":"")+"Seeds: "+seeds+" • Apibay",14);
       line.setBackgroundColor(panel);community.addView(line);
       Button take=button("Add magnet");community.addView(take);
-      take.setOnClickListener(v->{add(magnet,name);});
+      final String torrentName=name;take.setOnClickListener(v->{add(magnet,torrentName);});
       count++;
      }
      if(count==0)community.addView(label("No matches in this community index.",14));
