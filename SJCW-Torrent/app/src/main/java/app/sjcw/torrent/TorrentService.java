@@ -34,7 +34,7 @@ public final class TorrentService extends Service {
    for(TorrentHandle h:manager.getTorrentHandles())if(h.infoHash().toHex().equals(hash)){if(remove)manager.remove(h);else if(h.flags()!=null)h.pause();break;}
   }catch(Throwable t){error=t.toString();}}).start();
  }
- java.util.List<TorrentHandle> handles(){return manager==null?java.util.Collections.emptyList():manager.getTorrentHandles();}
+ java.util.List<TorrentHandle> handles(){return manager==null?java.util.Collections.emptyList():java.util.Arrays.asList(manager.getTorrentHandles());}
  @Override public IBinder onBind(Intent i){return null;}
  @Override public int onStartCommand(Intent i,int f,int id){return START_STICKY;}
  @Override public void onDestroy(){live=null;new Thread(()->{if(manager!=null)manager.stop();}).start();super.onDestroy();}
