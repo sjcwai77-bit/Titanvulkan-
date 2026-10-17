@@ -1,0 +1,2 @@
+# SJCW Hey Mate Android launcher
+Say **Hey mate** while the foreground microphone service is active, and it attempts to open ChatGPT. Android background-activity restrictions may require tapping a wake-up notification. Install the official ChatGPT app and enable Settings → Voice → Start with Voice. On-device recognition by default; optional speech-service fallback can process audio online. SpeechRecognizer is best-effort, not a guaranteed always-on hardware wake engine.

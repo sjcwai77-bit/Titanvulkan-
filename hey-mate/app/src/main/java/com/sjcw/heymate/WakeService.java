@@ -1,0 +1,230 @@
+package com.sjcw.heymate;
+
+import android.Manifest;
+import android.app.KeyguardManager;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.PowerManager;
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
+import java.util.ArrayList;
+import java.util.Locale;
+import java.util.regex.Pattern;
+
+public final class WakeService extends Service implements RecognitionListener {
+    public static final String ACTION_START = "com.sjcw.heymate.START";
+    public static final String ACTION_STOP = "com.sjcw.heymate.STOP";
+    public static final String PREFS = "hey_mate";
+    public static final String RUNNING = "running";
+    public static final String STATUS = "status";
+    public static final String LAST_HEARD = "last_heard";
+    public static final String LAST_TRIGGER = "last_trigger";
+    public static final String ALLOW_FALLBACK = "allow_fallback";
+    private static final String CHANNEL = "hey_mate_listener";
+    private static final String TRIGGER_CHANNEL = "hey_mate_trigger";
+    private static final int ONGOING_NOTIFICATION = 201;
+    private static final int TRIGGER_NOTIFICATION = 202;
+    private static final Pattern WAKE = Pattern.compile("(?:^|\\b)(?:hey|hi|hay)\\s+mate(?:\\b|$)");
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable retryRunnable = this::beginListening;
+    private SpeechRecognizer recognizer;
+    private boolean listening = false;
+    private boolean stopping = false;
+    private int consecutiveFailures = 0;
+    private NotificationManager notifications;
+
+    @Override public void onCreate() {
+        super.onCreate();
+        notifications = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        notifications.createNotificationChannel(new NotificationChannel(CHANNEL, "Hey Mate — Listening", NotificationManager.IMPORTANCE_LOW));
+        notifications.createNotificationChannel(new NotificationChannel(TRIGGER_CHANNEL, "Hey Mate — Wake detected", NotificationManager.IMPORTANCE_HIGH));
+    }
+
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        String action = intent == null ? ACTION_START : intent.getAction();
+        if (ACTION_STOP.equals(action)) {
+            stopCompletely("Stopped");
+            return START_NOT_STICKY;
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            stopCompletely("Microphone permission required");
+            return START_NOT_STICKY;
+        }
+        if (stopping) return START_NOT_STICKY;
+        showForeground();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING, true).apply();
+        if (recognizer == null) beginListening();
+        return START_NOT_STICKY;
+    }
+
+    private void showForeground() {
+        PendingIntent stop = PendingIntent.getService(this, 3,
+                new Intent(this, WakeService.class).setAction(ACTION_STOP),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent open = PendingIntent.getActivity(this, 4, new Intent(this, MainActivity.class),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification n = new Notification.Builder(this, CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle("SJCW Hey Mate")
+                .setContentText("Listening for ‘Hey mate’ · tap to manage")
+                .setContentIntent(open).setOngoing(true)
+                .addAction(new Notification.Action.Builder(null, "Stop listening", stop).build())
+                .build();
+        if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(ONGOING_NOTIFICATION, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+        } else startForeground(ONGOING_NOTIFICATION, n);
+    }
+
+    private void beginListening() {
+        if (stopping || listening) return;
+        handler.removeCallbacks(retryRunnable);
+        try {
+            if (recognizer != null) { recognizer.destroy(); recognizer = null; }
+            boolean offline = Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this);
+            if (offline) {
+                recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
+            } else if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(ALLOW_FALLBACK, false)
+                    && SpeechRecognizer.isRecognitionAvailable(this)) {
+                recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            } else {
+                setStatus("On-device recognition unavailable. Enable speech-service fallback.");
+                stopCompletely(null);
+                return;
+            }
+            recognizer.setRecognitionListener(this);
+            Intent request = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            request.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            request.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB");
+            request.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+            request.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
+            request.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, offline);
+            listening = true;
+            setStatus(offline ? "Listening · on-device recognition" : "Listening · speech service (may use internet)");
+            recognizer.startListening(request);
+        } catch (Exception failure) {
+            listening = false;
+            setStatus("Speech service error: " + failure.getClass().getSimpleName());
+            scheduleRetry(3000);
+        }
+    }
+
+    private void scheduleRetry(long millis) {
+        if (stopping) return;
+        listening = false;
+        handler.removeCallbacks(retryRunnable);
+        handler.postDelayed(retryRunnable, millis);
+    }
+
+    private void setStatus(String value) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(STATUS, value).apply();
+    }
+
+    private boolean matched(ArrayList<String> phrases) {
+        if (phrases == null) return false;
+        for (String phrase : phrases) {
+            if (phrase == null) continue;
+            String text = phrase.toLowerCase(Locale.UK).replaceAll("[^a-z]+", " ").trim();
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(LAST_HEARD, text).apply();
+            if (WAKE.matcher(text).find()) return true;
+        }
+        return false;
+    }
+
+    private void onWake() {
+        if (stopping) return;
+        stopping = true;
+        handler.removeCallbacks(retryRunnable);
+        setStatus("Wake phrase detected · opening ChatGPT");
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putLong(LAST_TRIGGER, System.currentTimeMillis()).apply();
+        listening = false;
+        if (recognizer != null) {
+            try { recognizer.cancel(); recognizer.destroy(); } catch (Exception ignored) { }
+            recognizer = null;
+        }
+        Intent chatGPT = getPackageManager().getLaunchIntentForPackage("com.openai.chatgpt");
+        if (chatGPT == null) {
+            setStatus("ChatGPT not installed");
+        } else {
+            chatGPT.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            PendingIntent openChat = PendingIntent.getActivity(this, 42, chatGPT,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            Notification wakeNotice = new Notification.Builder(this, TRIGGER_CHANNEL)
+                    .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                    .setContentTitle("Hey mate! ChatGPT is ready")
+                    .setContentText("Tap to talk if ChatGPT didn't open")
+                    .setContentIntent(openChat).setAutoCancel(true).build();
+            notifications.notify(TRIGGER_NOTIFICATION, wakeNotice);
+            KeyguardManager keyguard = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+            PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
+            if (power.isInteractive() && !keyguard.isKeyguardLocked()) {
+                handler.postDelayed(() -> {
+                    try { startActivity(chatGPT); } catch (RuntimeException ignored) { }
+                }, 350);
+            }
+        }
+        handler.postDelayed(() -> stopCompletely(null), 850);
+    }
+
+    private void stopCompletely(String reason) {
+        stopping = true;
+        listening = false;
+        handler.removeCallbacks(retryRunnable);
+        if (recognizer != null) {
+            try { recognizer.cancel(); recognizer.destroy(); } catch (Exception ignored) { }
+            recognizer = null;
+        }
+        if (reason != null) setStatus(reason);
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING, false).apply();
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        stopSelf();
+    }
+
+    @Override public void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
+        if (recognizer != null) { try { recognizer.destroy(); } catch (Exception ignored) { } recognizer = null; }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING, false).apply();
+        super.onDestroy();
+    }
+    @Override public IBinder onBind(Intent intent) { return null; }
+    @Override public void onReadyForSpeech(Bundle params) { consecutiveFailures = 0; }
+    @Override public void onBeginningOfSpeech() { }
+    @Override public void onRmsChanged(float rmsdB) { }
+    @Override public void onBufferReceived(byte[] buffer) { }
+    @Override public void onEndOfSpeech() { }
+    @Override public void onError(int error) {
+        if (stopping) return;
+        if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS || error == SpeechRecognizer.ERROR_CLIENT) {
+            setStatus("Recognition failed (error " + error + "). Restart listening.");
+            stopCompletely(null);
+            return;
+        }
+        consecutiveFailures++;
+        if (error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT && error != SpeechRecognizer.ERROR_NO_MATCH) {
+            setStatus("Reconnecting speech service (error " + error + ")");
+        }
+        scheduleRetry(Math.min(12000, 600 + (long)consecutiveFailures * 650));
+    }
+    @Override public void onResults(Bundle results) {
+        if (stopping) return;
+        if (matched(results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))) onWake();
+        else scheduleRetry(350);
+    }
+    @Override public void onPartialResults(Bundle partialResults) {
+        if (!stopping && matched(partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))) onWake();
+    }
+    @Override public void onEvent(int eventType, Bundle params) { }
+}
