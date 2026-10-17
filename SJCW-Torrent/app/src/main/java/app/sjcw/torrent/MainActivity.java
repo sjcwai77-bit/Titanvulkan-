@@ -22,7 +22,7 @@ public class MainActivity extends Activity {
  @Override public void onCreate(Bundle b){super.onCreate(b);
   getWindow().setStatusBarColor(bg); getWindow().setNavigationBarColor(bg);
   ScrollView sc=new ScrollView(this);root=new LinearLayout(this);root.setPadding(20,20,20,24);root.setOrientation(1);root.setBackgroundColor(bg);sc.addView(root);setContentView(sc);
-  root.addView(label("SJCW TORRENT",28));root.addView(label("Archive + community torrent search • Magnet links • BitTorrent",13));
+  root.addView(label("SJCW TORRENT 2.1",28));root.addView(label("Magnet parser fix • Build 2.1.0 • New separate app",13));root.addView(label("Archive + community search • Magnet links • BitTorrent",13));
   query=new EditText(this);query.setSingleLine();query.setTextColor(ink);query.setHintTextColor(0xffA9B6C5);query.setHint("Search torrents or paste a magnet link");root.addView(query);
   LinearLayout controls=new LinearLayout(this);root.addView(controls);
   Button search=button("Search");Button add=button("Add magnet");controls.addView(search,new LinearLayout.LayoutParams(0,-2,1));controls.addView(add,new LinearLayout.LayoutParams(0,-2,1));
@@ -61,7 +61,7 @@ public class MainActivity extends Activity {
   if(q.isEmpty())return;
   if(q.startsWith("magnet:")){add(q);return;}
   final int token=++searchId;
-  showingSearch=true;headline.setText("Search: "+q);items.removeAllViews();
+  showingSearch=true;query.clearFocus(); android.view.inputmethod.InputMethodManager keyboard=(android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(keyboard!=null)keyboard.hideSoftInputFromWindow(query.getWindowToken(),0); headline.setText("Search: "+q);items.removeAllViews();
   items.addView(label("Results depend on reachable indexers. Use only torrents you're authorised to download.",12));
   items.addView(label("COMMUNITY TORRENTS",18));
   LinearLayout community=new LinearLayout(this);community.setOrientation(1);items.addView(community);

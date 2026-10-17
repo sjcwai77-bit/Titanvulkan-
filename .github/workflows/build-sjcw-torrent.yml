@@ -17,6 +17,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Verify magnet parser with JVM tests
+        run: |
+          mkdir -p build/magnet-test
+          javac -d build/magnet-test SJCW-Torrent/app/src/main/java/app/sjcw/torrent/MagnetParser.java SJCW-Torrent/tests/MagnetParserTest.java
+          java -ea -cp build/magnet-test app.sjcw.torrent.MagnetParserTest
       - name: Assemble APK
         run: gradle --no-daemon -p SJCW-Torrent assembleDebug
       - uses: actions/upload-artifact@v4
@@ -27,9 +32,9 @@ jobs:
       - name: Publish direct APK file
         run: |
           mkdir -p apk
-          cp SJCW-Torrent/app/build/outputs/apk/debug/app-debug.apk apk/SJCW-Torrent-2.apk
+          cp SJCW-Torrent/app/build/outputs/apk/debug/app-debug.apk apk/SJCW-Torrent-2.1-FIX.apk
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add apk/SJCW-Torrent-2.apk
+          git add apk/SJCW-Torrent-2.1-FIX.apk
           git commit -m "Publish installable torrent APK [skip ci]"
           git push origin HEAD:torrent-client
