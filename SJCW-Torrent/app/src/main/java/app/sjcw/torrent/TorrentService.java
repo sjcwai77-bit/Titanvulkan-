@@ -85,12 +85,9 @@ public final class TorrentService extends Service {
     if(manager==null)throw new IOException("Torrent engine is starting");
     String hash; String nameHint=friendlyName;
     if(src.startsWith("magnet:?")){
-     Uri uri=Uri.parse(src);
-     String xt=uri.getQueryParameter("xt");
-     if(xt==null||!xt.toLowerCase(Locale.ROOT).startsWith("urn:btih:"))throw new IOException("Magnet link has no torrent hash");
-     hash=xt.substring(9).toLowerCase(Locale.ROOT);
-     if(!hash.matches("[a-f0-9]{40}"))throw new IOException("This version requires a 40-character magnet hash");
-     if(nameHint==null||nameHint.trim().isEmpty())nameHint=uri.getQueryParameter("dn");
+     MagnetParser.Magnet magnet=MagnetParser.parse(src);
+     hash=magnet.hash;
+     if(nameHint==null||nameHint.trim().isEmpty())nameHint=magnet.displayName;
     }else{
      File file=new File(src);
      if(!file.isFile())throw new IOException("Torrent file missing");
