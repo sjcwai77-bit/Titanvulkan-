@@ -99,6 +99,13 @@ public final class MainActivity extends Activity {
         addGap(log, 9);
         lastTriggered = text("Last wake-up: —", 13, MUTED, Typeface.NORMAL);
         log.addView(lastTriggered);
+        addGap(log, 9);
+        TextView tapState = text("Shortcut status: —", 12, MUTED, Typeface.NORMAL);
+        log.addView(tapState);
+        handler.postDelayed(new Runnable(){ @Override public void run() {
+            tapState.setText("Shortcut status: " + prefs.getString("shortcut_status","Not attempted yet"));
+            if(!isFinishing())handler.postDelayed(this,1500);
+        }},1000);
         page.addView(log);
         addGap(page, 16);
 
@@ -128,7 +135,7 @@ public final class MainActivity extends Activity {
         LinearLayout actions = panel();
         actions.addView(text("CHATGPT HANDOFF", 12, MINT, Typeface.BOLD));
         addGap(actions, 9);
-        TextView about = text("For automatic Voice button pressing, enable SJCW Hey Mate under Android Accessibility settings. In ChatGPT, also enable Settings → Voice → Start with Voice if available.", 13, Color.WHITE, Typeface.NORMAL);
+        TextView about = text("This version presses your existing home-screen Voice shortcut, not ChatGPT text chat. Position from your screenshot: 50% across, 57% down. Allow Accessibility access below.", 13, Color.WHITE, Typeface.NORMAL);
         about.setLineSpacing(dp(2), 1.0f);
         actions.addView(about);
         addGap(actions, 15);
@@ -136,6 +143,39 @@ public final class MainActivity extends Activity {
         access.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         actions.addView(access, new LinearLayout.LayoutParams(-1, dp(51)));
         addGap(actions, 12);
+        TextView position = text("VOICE SHORTCUT POSITION — 50% across, 57% down", 12, MINT, Typeface.BOLD);
+        actions.addView(position);
+        addGap(actions, 8);
+        android.widget.SeekBar xAdjust = new android.widget.SeekBar(this);
+        xAdjust.setMax(100);
+        xAdjust.setProgress(prefs.getInt("tap_x", 50));
+        actions.addView(xAdjust);
+        android.widget.SeekBar yAdjust = new android.widget.SeekBar(this);
+        yAdjust.setMax(100);
+        yAdjust.setProgress(prefs.getInt("tap_y", 57));
+        actions.addView(yAdjust);
+        android.widget.SeekBar.OnSeekBarChangeListener move = new android.widget.SeekBar.OnSeekBarChangeListener(){
+            @Override public void onProgressChanged(android.widget.SeekBar s,int v,boolean user){
+                if(user) {
+                    prefs.edit().putInt("tap_x",xAdjust.getProgress()).putInt("tap_y",yAdjust.getProgress()).apply();
+                    position.setText("VOICE SHORTCUT POSITION — "+xAdjust.getProgress()+"% across, "+yAdjust.getProgress()+"% down");
+                }
+            }
+            @Override public void onStartTrackingTouch(android.widget.SeekBar s){}
+            @Override public void onStopTrackingTouch(android.widget.SeekBar s){}
+        };
+        xAdjust.setOnSeekBarChangeListener(move);
+        yAdjust.setOnSeekBarChangeListener(move);
+        addGap(actions, 10);
+        Button test = button("TEST SINGLE HOME-SCREEN TAP", MINT, BACKGROUND);
+        test.setOnClickListener(v -> {
+            if(!VoiceAssistService.isReady()){
+                Toast.makeText(this,"Enable Voice Button Access first",Toast.LENGTH_LONG).show();
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            } else WakeService.testHomeShortcut();
+        });
+        actions.addView(test,new LinearLayout.LayoutParams(-1,dp(50)));
+        addGap(actions, 9);
         Button open = button("OPEN CHATGPT", PANEL, MINT);
         open.setOnClickListener(v -> openChatGPT());
         actions.addView(open, new LinearLayout.LayoutParams(-1, dp(50)));
@@ -149,7 +189,7 @@ public final class MainActivity extends Activity {
         page.addView(actions);
         addGap(page, 19);
 
-        TextView caveat = text("ANDROID NOTE · Begin listening while the app is open. A notification indicates microphone use. On a locked phone, or when Android blocks background launch, you may need to unlock or tap the notification. Listening continues with the window closed or minimised. It pauses while ChatGPT Voice uses the microphone, and should resume when voice closes if Android exposes that transition. Otherwise use Resume in the notification. Android may still stop microphone access after force-stop or system restrictions.", 12, MUTED, Typeface.NORMAL);
+        TextView caveat = text("ANDROID NOTE · Begin listening while the app is open. A notification indicates microphone use. On a locked phone, or when Android blocks background launch, you may need to unlock or tap the notification. Listening continues with the window minimised. On "Hey mate" it returns to the home screen and taps the configured shortcut once. Listening pauses while ChatGPT Voice has the microphone, then resumes when the conversation closes if detectable; otherwise tap Resume in the notification. Android may still stop microphone access after force-stop or system restrictions.", 12, MUTED, Typeface.NORMAL);
         caveat.setLineSpacing(dp(3), 1f);
         page.addView(caveat);
         setContentView(scroll);

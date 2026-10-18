@@ -151,41 +151,57 @@ public final class WakeService extends Service implements RecognitionListener {
     }
 
     private void onWake() {
-        if (stopping) return;
+        if(stopping || paused) return;
         paused = true;
         handler.removeCallbacks(retryRunnable);
-        setStatus("Hey mate detected — opening ChatGPT Voice");
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putLong(LAST_TRIGGER, System.currentTimeMillis()).putBoolean("voice_pending",true).putBoolean("voice_active",false).apply();
         listening = false;
-        if (recognizer != null) {
-            try { recognizer.cancel(); recognizer.destroy(); } catch (Exception ignored) { }
+        if(recognizer != null) {
+            try { recognizer.cancel(); recognizer.destroy(); } catch(Exception ignored) {}
             recognizer = null;
         }
-        Intent chatGPT = getPackageManager().getLaunchIntentForPackage("com.openai.chatgpt");
-        if (chatGPT == null) {
-            setStatus("ChatGPT not installed");
-            resumeListening();
-        } else {
-            chatGPT.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            PendingIntent openChat = PendingIntent.getActivity(this, 42, chatGPT,
-                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            Notification wakeNotice = new Notification.Builder(this, TRIGGER_CHANNEL)
-                    .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                    .setContentTitle("Hey mate! ChatGPT is ready")
-                    .setContentText("Tap to talk if ChatGPT didn't open")
-                    .setContentIntent(openChat).setAutoCancel(true).build();
-            notifications.notify(TRIGGER_NOTIFICATION, wakeNotice);
-            KeyguardManager keyguard = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
-            PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
-            if (power.isInteractive() && !keyguard.isKeyguardLocked()) {
-                handler.postDelayed(() -> {
-                    try { startActivity(chatGPT); } catch (RuntimeException ignored) { }
-                }, 350);
-            }
-        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putLong(LAST_TRIGGER,System.currentTimeMillis())
+            .putBoolean("voice_pending",true)
+            .putBoolean("voice_active",false).apply();
         showForeground();
-        handler.postDelayed(() -> { if (paused && getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("voice_pending",false)) resumeListening(); }, 24000);
+        setStatus("Hey mate heard: touching Voice shortcut on home screen");
+        if(!VoiceAssistService.startHomeShortcut()) {
+            setStatus("Enable Voice Button Access in Hey Mate settings");
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("voice_pending",false).apply();
+            showPermissionNotification();
+            handler.postDelayed(this::resumeListening,1800);
+            return;
+        }
+        // Recover only when the home button could not be pressed.
+        handler.postDelayed(() -> {
+            if(paused && getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("voice_pending",false)) {
+                setStatus("Voice shortcut timed out; listening again");
+                resumeListening();
+            }
+        },15000);
+    }
+
+    private void showPermissionNotification() {
+        PendingIntent open = PendingIntent.getActivity(this, 42, new Intent(this,MainActivity.class),
+            PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
+        notifications.notify(TRIGGER_NOTIFICATION, new Notification.Builder(this,TRIGGER_CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("Hey Mate needs Voice Button Access")
+            .setContentText("Tap to enable the accessibility service")
+            .setContentIntent(open).setAutoCancel(true).build());
+    }
+
+    public static void shortcutFailed() {
+        WakeService w = activeInstance;
+        if(w!=null)w.handler.post(()->{
+            w.setStatus("Home shortcut was not tapped; resuming listening");
+            w.resumeListening();
+        });
+    }
+    public static void testHomeShortcut() {
+        WakeService w=activeInstance;
+        if(w!=null) w.handler.post(w::onWake);
+        else VoiceAssistService.startHomeShortcut();
     }
 
     private void resumeListening() {
@@ -195,7 +211,7 @@ public final class WakeService extends Service implements RecognitionListener {
         showForeground();
         handler.postDelayed(this::beginListening,700);
     }
-    public static void voiceStarted() { WakeService w=activeInstance; if(w!=null) w.handler.post(() -> { w.paused=true; w.setStatus("Voice activated — microphone handed to ChatGPT"); w.showForeground(); }); }
+    public static void voiceStarted() { WakeService w=activeInstance; if(w!=null) w.handler.post(() -> { w.paused=true; w.setStatus("Home shortcut tapped; ChatGPT Voice should now open"); w.showForeground(); }); }
     public static void voiceEnded() { WakeService w=activeInstance; if(w!=null) w.handler.post(w::resumeListening); }
 
     private void stopCompletely(String reason) {
