@@ -77,11 +77,6 @@ public final class VoiceAssistService extends AccessibilityService {
     }
     private void beginNavigation(){
         if(navigating)return;
-        if(!HomeWifi.trusted(this)){
-            update("Home Wi-Fi not trusted; screen navigation disabled");
-            WakeService.shortcutFailed();
-            return;
-        }
         navigating=true;
         gestureBusy=false;
         tapIssued=false;
@@ -118,10 +113,6 @@ public final class VoiceAssistService extends AccessibilityService {
     }
     private void handleTrustedKeyguard(){
         if(!navigating || gestureBusy || tapIssued)return;
-        if(!HomeWifi.trusted(this)){
-            fail("Home Wi-Fi changed: Voice navigation cancelled");
-            return;
-        }
         PowerManager pm=(PowerManager)getSystemService(Context.POWER_SERVICE);
         if(pm!=null && !pm.isInteractive()){
             if(++lockWaitAttempts<8) {
@@ -241,10 +232,6 @@ public final class VoiceAssistService extends AccessibilityService {
     }
     private void locateVoicePage(){
         if(!navigating || gestureBusy || tapIssued)return;
-        if(!HomeWifi.trusted(this)){
-            fail("Home Wi-Fi disconnected before Voice shortcut tap");
-            return;
-        }
         KeyguardManager lock=keyguard();
         if(lock!=null && lock.isKeyguardLocked()){
             fail("Lock screen returned; cannot tap Voice shortcut");
@@ -318,7 +305,7 @@ public final class VoiceAssistService extends AccessibilityService {
     private void tapOnce(){
         if(!navigating || tapIssued || gestureBusy)return;
         KeyguardManager kg=keyguard();
-        if(!HomeWifi.trusted(this) || (kg!=null && kg.isKeyguardLocked())){
+        if(kg!=null && kg.isKeyguardLocked()){
             fail("Home Wi-Fi changed or screen relocked — tap cancelled");return;
         }
         AccessibilityNodeInfo root=getRootInActiveWindow();
