@@ -227,12 +227,13 @@ public final class WakeService extends Service implements RecognitionListener {
     @Override public void onEndOfSpeech() { }
     @Override public void onError(int error) {
         if (stopping || paused) return;
-        if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS || error == SpeechRecognizer.ERROR_CLIENT) {
+        if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
             setStatus("Recognition failed (error " + error + "). Restart listening.");
             stopCompletely(null);
             return;
         }
-        consecutiveFailures++;
+        if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) consecutiveFailures = 0;
+        else consecutiveFailures++;
         if (error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT && error != SpeechRecognizer.ERROR_NO_MATCH) {
             setStatus("Reconnecting speech service (error " + error + ")");
         }
