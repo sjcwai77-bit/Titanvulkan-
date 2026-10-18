@@ -14,7 +14,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
-import android.speech.SpeechRecognizer;
 import android.text.format.DateFormat;
 import android.view.Gravity;
 import android.view.View;
@@ -116,13 +115,13 @@ public final class MainActivity extends Activity {
         settings.addView(listenerMode);
         addGap(settings, 11);
         Switch fallback = new Switch(this);
-        fallback.setText("Allow speech-service fallback");
+        fallback.setText("Allow one-time offline model download (~40 MB)");
         fallback.setTextColor(Color.WHITE);
         fallback.setTextSize(14);
-        fallback.setChecked(prefs.getBoolean(WakeService.ALLOW_FALLBACK, false));
+        fallback.setChecked(prefs.getBoolean("model_download_approved", false));
         fallback.setOnCheckedChangeListener((b, checked) -> {
-            prefs.edit().putBoolean(WakeService.ALLOW_FALLBACK, checked).apply();
-            Toast.makeText(this, "Change takes effect after restarting listening", Toast.LENGTH_SHORT).show();
+            prefs.edit().putBoolean("model_download_approved", checked).apply();
+            Toast.makeText(this, checked ? "Press Start Listening to download the model" : "Model download disabled", Toast.LENGTH_LONG).show();
             refresh();
         });
         settings.addView(fallback);
@@ -189,7 +188,7 @@ public final class MainActivity extends Activity {
         page.addView(actions);
         addGap(page, 19);
 
-        TextView caveat = text("ANDROID NOTE · Begin listening while the app is open. A notification indicates microphone use. On a locked phone, or when Android blocks background launch, you may need to unlock or tap the notification. Listening continues with the window minimised. On hearing Hey Mate, it returns to the home screen and taps the configured shortcut once. Listening pauses while ChatGPT Voice has the microphone, then resumes when the conversation closes if detectable; otherwise tap Resume in the notification. Android may still stop microphone access after force-stop or system restrictions.", 12, MUTED, Typeface.NORMAL);
+        TextView caveat = text("ANDROID NOTE · Begin listening while the app is open. A notification indicates microphone use. On a locked phone, or when Android blocks background launch, you may need to unlock or tap the notification. Listening continuously with the window minimised, without the ten-second Google recogniser timeout. On hearing Hey Mate, it returns to the home screen and taps the configured shortcut once. Listening pauses while ChatGPT Voice has the microphone, then resumes when the conversation closes if detectable; otherwise tap Resume in the notification. Android may still stop microphone access after force-stop or system restrictions.", 12, MUTED, Typeface.NORMAL);
         caveat.setLineSpacing(dp(3), 1f);
         page.addView(caveat);
         setContentView(scroll);
@@ -249,8 +248,9 @@ public final class MainActivity extends Activity {
         lastHeard.setText("Last recognised speech: " + (heard.isEmpty() ? "—" : heard));
         long when = prefs.getLong(WakeService.LAST_TRIGGER, 0);
         lastTriggered.setText("Last wake-up: " + (when == 0 ? "—" : DateFormat.getTimeFormat(this).format(new Date(when))));
-        boolean offline = Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this);
-        listenerMode.setText(offline ? "On-device recogniser: available ✓" : "On-device recogniser: unavailable");
+        boolean ready = OfflineWakeEngine.modelReady(this);
+        listenerMode.setText(ready ? "Offline Vosk model: installed ✓ · continuous microphone" :
+            "Offline Vosk model: not installed · enable one-time download below");
     }
     private LinearLayout panel() {
         LinearLayout card = new LinearLayout(this);
