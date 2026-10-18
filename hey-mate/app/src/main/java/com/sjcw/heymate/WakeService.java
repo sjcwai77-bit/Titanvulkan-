@@ -28,6 +28,7 @@ public final class WakeService extends Service implements RecognitionListener {
     public static final String ACTION_START = "com.sjcw.heymate.START";
     public static final String ACTION_STOP = "com.sjcw.heymate.STOP";
     public static final String PREFS = "hey_mate";
+    public static final String ACTION_RESUME = "com.sjcw.heymate.RESUME";
     public static final String RUNNING = "running";
     public static final String STATUS = "status";
     public static final String LAST_HEARD = "last_heard";
@@ -43,11 +44,14 @@ public final class WakeService extends Service implements RecognitionListener {
     private SpeechRecognizer recognizer;
     private boolean listening = false;
     private boolean stopping = false;
+    private boolean paused = false;
+    private static WakeService activeInstance;
     private int consecutiveFailures = 0;
     private NotificationManager notifications;
 
     @Override public void onCreate() {
         super.onCreate();
+        activeInstance = this;
         notifications = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         notifications.createNotificationChannel(new NotificationChannel(CHANNEL, "Hey Mate — Listening", NotificationManager.IMPORTANCE_LOW));
         notifications.createNotificationChannel(new NotificationChannel(TRIGGER_CHANNEL, "Hey Mate — Wake detected", NotificationManager.IMPORTANCE_HIGH));
@@ -64,10 +68,11 @@ public final class WakeService extends Service implements RecognitionListener {
             return START_NOT_STICKY;
         }
         if (stopping) return START_NOT_STICKY;
+        if (ACTION_RESUME.equals(action)) { paused=false; getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("voice_pending", false).putBoolean("voice_active", false).apply(); }
         showForeground();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING, true).apply();
-        if (recognizer == null) beginListening();
-        return START_NOT_STICKY;
+        if (!paused && recognizer == null) beginListening();
+        return START_STICKY;
     }
 
     private void showForeground() {
@@ -89,7 +94,7 @@ public final class WakeService extends Service implements RecognitionListener {
     }
 
     private void beginListening() {
-        if (stopping || listening) return;
+        if (stopping || paused || listening) return;
         handler.removeCallbacks(retryRunnable);
         try {
             if (recognizer != null) { recognizer.destroy(); recognizer = null; }
@@ -122,7 +127,7 @@ public final class WakeService extends Service implements RecognitionListener {
     }
 
     private void scheduleRetry(long millis) {
-        if (stopping) return;
+        if (stopping || paused) return;
         listening = false;
         handler.removeCallbacks(retryRunnable);
         handler.postDelayed(retryRunnable, millis);
