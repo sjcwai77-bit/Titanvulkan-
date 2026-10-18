@@ -154,7 +154,7 @@ public final class MainActivity extends Activity {
         LinearLayout actions = panel();
         actions.addView(text("CHATGPT HANDOFF", 12, MINT, Typeface.BOLD));
         addGap(actions, 9);
-        TextView about = text("This version presses your existing home-screen Voice shortcut, not ChatGPT text chat. Position from your screenshot: 50% across, 57% down. Allow Accessibility access below.", 13, Color.WHITE, Typeface.NORMAL);
+        TextView about = text("Hey Mate searches your Samsung home screens for the page with Halifax, DeepSeek and Proton Mail, then presses the central Voice shortcut once. Tap position remains adjustable.", 13, Color.WHITE, Typeface.NORMAL);
         about.setLineSpacing(dp(2), 1.0f);
         actions.addView(about);
         addGap(actions, 15);
