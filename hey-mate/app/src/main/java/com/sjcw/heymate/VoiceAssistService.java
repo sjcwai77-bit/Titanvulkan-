@@ -3,6 +3,8 @@ package com.sjcw.heymate;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.content.Context;
+import android.app.KeyguardManager;
+import android.os.PowerManager;
 import android.content.SharedPreferences;
 import android.graphics.Path;
 import android.graphics.Point;
@@ -31,6 +33,8 @@ public final class VoiceAssistService extends AccessibilityService {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private boolean navigating, gestureBusy, scanQueued, tapIssued;
     private boolean chatWasOpened, verifiedVoicePage;
+    private int lockWaitAttempts=0;
+    private boolean sentUnlockSwipe=false;
     private int noLauncherCount, rightSwipes, leftSwipes;
     private long lastTapAt;
     private final Runnable scanTask=()->{scanQueued=false;locateVoicePage();};
@@ -73,6 +77,11 @@ public final class VoiceAssistService extends AccessibilityService {
     }
     private void beginNavigation(){
         if(navigating)return;
+        if(!HomeWifi.trusted(this)){
+            update("Home Wi-Fi not trusted; screen navigation disabled");
+            WakeService.shortcutFailed();
+            return;
+        }
         navigating=true;
         gestureBusy=false;
         tapIssued=false;
@@ -80,10 +89,116 @@ public final class VoiceAssistService extends AccessibilityService {
         rightSwipes=0;
         leftSwipes=0;
         noLauncherCount=0;
+        lockWaitAttempts=0;
+        sentUnlockSwipe=false;
         chatWasOpened=false;
         lastTapAt=0;
-        update("Returning to home screen…");
-        // Samsung One UI: the second HOME usually returns to the designated main page.
+        update("Waking display and preparing Voice shortcut…");
+        wakeDisplayForVoice();
+        handler.postDelayed(this::handleTrustedKeyguard,520);
+    }
+
+    private void wakeDisplayForVoice(){
+        PowerManager pm=(PowerManager)getSystemService(Context.POWER_SERVICE);
+        if(pm==null || pm.isInteractive())return;
+        try{
+            // Used only for a confirmed wake phrase, not to keep the screen on.
+            // The OS may block legacy screen-wake locks on some Android builds.
+            PowerManager.WakeLock wl=pm.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK|PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "HeyMate:WakeForVoice");
+            wl.acquire(1900);
+        }catch(Exception e){
+            update("Wake request blocked by Android; trying unlock on next screen-on");
+        }
+    }
+
+    private KeyguardManager keyguard(){
+        return (KeyguardManager)getSystemService(Context.KEYGUARD_SERVICE);
+    }
+    private void handleTrustedKeyguard(){
+        if(!navigating || gestureBusy || tapIssued)return;
+        if(!HomeWifi.trusted(this)){
+            fail("Home Wi-Fi changed: Voice navigation cancelled");
+            return;
+        }
+        PowerManager pm=(PowerManager)getSystemService(Context.POWER_SERVICE);
+        if(pm!=null && !pm.isInteractive()){
+            if(++lockWaitAttempts<8) {
+                wakeDisplayForVoice();
+                handler.postDelayed(this::handleTrustedKeyguard,450);
+            } else fail("Android did not turn screen on; unlock manually");
+            return;
+        }
+        KeyguardManager kg=keyguard();
+        if(kg==null){fail("Could not verify lock-screen state");return;}
+        if(!kg.isKeyguardLocked()){
+            goHomeThenTap();
+            return;
+        }
+        // An open padlock / Extend Unlock may leave the keyguard showing;
+        // isDeviceLocked() distinguishes it from a real authentication lock.
+        if(kg.isDeviceLocked()){
+            // Give Extend Unlock a little time to release after screen-on.
+            if(++lockWaitAttempts<=5){
+                update("Waiting for Samsung Extend Unlock trust…");
+                handler.postDelayed(this::handleTrustedKeyguard,420);
+            }else fail("PIN or biometric required; leaving phone secure");
+            return;
+        }
+        if(sentUnlockSwipe){
+            if(++lockWaitAttempts<10)
+                handler.postDelayed(this::handleTrustedKeyguard,310);
+            else fail("Trusted lock screen did not dismiss; manual swipe needed");
+            return;
+        }
+        sentUnlockSwipe=true;
+        unlockSwipe();
+    }
+
+    private void unlockSwipe(){
+        if(!navigating || gestureBusy)return;
+        KeyguardManager kg=keyguard();
+        if(kg==null || kg.isDeviceLocked() || !kg.isKeyguardLocked()){
+            handleTrustedKeyguard();return;
+        }
+        gestureBusy=true;
+        update("Trusted screen detected — swiping up once");
+        Point size=new Point();
+        ((WindowManager)getSystemService(Context.WINDOW_SERVICE))
+            .getDefaultDisplay().getRealSize(size);
+        Path swipe=new Path();
+        swipe.moveTo(size.x*0.5f,size.y*0.84f);
+        swipe.lineTo(size.x*0.5f,size.y*0.28f);
+        GestureDescription g=new GestureDescription.Builder()
+            .addStroke(new GestureDescription.StrokeDescription(swipe,0,390)).build();
+        if(!dispatchGesture(g,new GestureResultCallback(){
+            @Override public void onCompleted(GestureDescription result){
+                gestureBusy=false;
+                handler.postDelayed(()->{
+                    KeyguardManager state=keyguard();
+                    if(state!=null && state.isDeviceLocked()){
+                        fail("Android now requires a PIN; cannot continue");
+                    }else handleTrustedKeyguard();
+                },640);
+            }
+            @Override public void onCancelled(GestureDescription result){
+                gestureBusy=false;
+                fail("Android cancelled trusted-screen swipe");
+            }
+        },handler)){
+            gestureBusy=false;
+            fail("Android did not permit the trusted-screen swipe");
+        }
+    }
+    private void goHomeThenTap(){
+        if(!navigating || tapIssued)return;
+        KeyguardManager kg=keyguard();
+        if(kg!=null && kg.isKeyguardLocked()){
+            fail("Lock screen still visible; refusing to tap behind it");
+            return;
+        }
+        update("Lock screen dismissed — returning to Voice home page");
         if(!performGlobalAction(GLOBAL_ACTION_HOME)){
             fail("Android refused Home action");
             return;
@@ -126,6 +241,15 @@ public final class VoiceAssistService extends AccessibilityService {
     }
     private void locateVoicePage(){
         if(!navigating || gestureBusy || tapIssued)return;
+        if(!HomeWifi.trusted(this)){
+            fail("Home Wi-Fi disconnected before Voice shortcut tap");
+            return;
+        }
+        KeyguardManager lock=keyguard();
+        if(lock!=null && lock.isKeyguardLocked()){
+            fail("Lock screen returned; cannot tap Voice shortcut");
+            return;
+        }
         AccessibilityNodeInfo root=getRootInActiveWindow();
         if(root==null || !isLauncher(root.getPackageName())){
             if(++noLauncherCount<=13){
@@ -193,6 +317,10 @@ public final class VoiceAssistService extends AccessibilityService {
     }
     private void tapOnce(){
         if(!navigating || tapIssued || gestureBusy)return;
+        KeyguardManager kg=keyguard();
+        if(!HomeWifi.trusted(this) || (kg!=null && kg.isKeyguardLocked())){
+            fail("Home Wi-Fi changed or screen relocked — tap cancelled");return;
+        }
         AccessibilityNodeInfo root=getRootInActiveWindow();
         if(root==null || !isLauncher(root.getPackageName())) {
             scheduleScan(260);
