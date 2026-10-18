@@ -128,55 +128,6 @@ public final class MainActivity extends Activity {
         page.addView(log);
         addGap(page, 16);
 
-        LinearLayout wifi = panel();
-        wifi.addView(text("HOME WI-FI SAFETY",12,MINT,Typeface.BOLD));
-        addGap(wifi,10);
-        TextView wifiState=text("Network: identifying…",13,Color.WHITE,Typeface.NORMAL);
-        wifi.addView(wifiState);
-        addGap(wifi,8);
-        TextView selectedWifi=text("Trusted network: not configured",13,MUTED,Typeface.NORMAL);
-        wifi.addView(selectedWifi);
-        addGap(wifi,10);
-        Button saveWifi=button("TRUST CURRENT WI-FI",MINT,BACKGROUND);
-        saveWifi.setOnClickListener(v->{
-            if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED){
-                requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION},501);return;
-            }
-            HomeWifi.Connection con=HomeWifi.current(this);
-            if(!con.wifi||con.ssid.isEmpty()){
-                Toast.makeText(this,con.diagnostic,Toast.LENGTH_LONG).show();return;
-            }
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Trust home network?")
-                .setMessage("Only allow Hey Mate to listen while this Wi-Fi network is active: "+con.ssid+
-                    "\n\nWi-Fi names alone aren't proof of physical location. Keep your Samsung PIN enabled.")
-                .setNegativeButton("Cancel",null)
-                .setPositiveButton("Trust this Wi-Fi",(d,w)->{
-                    prefs.edit().putString(HomeWifi.PREF_SSID,con.ssid).apply();
-                    if(prefs.getBoolean(WakeService.RUNNING,false))startService(new Intent(this,WakeService.class).setAction(WakeService.ACTION_RESUME));
-                    refresh();
-                }).show();
-        });
-        wifi.addView(saveWifi,new LinearLayout.LayoutParams(-1,dp(49)));
-        addGap(wifi,9);
-        Button clearWifi=button("CLEAR TRUSTED NETWORK",PANEL,MUTED);
-        clearWifi.setOnClickListener(v->{
-            prefs.edit().remove(HomeWifi.PREF_SSID).apply();
-            if(prefs.getBoolean(WakeService.RUNNING,false))
-                startService(new Intent(this,WakeService.class).setAction(WakeService.ACTION_RESUME));
-            refresh();
-        });
-        wifi.addView(clearWifi,new LinearLayout.LayoutParams(-1,dp(47)));
-        addGap(wifi,10);
-        wifi.addView(text("On any other connection, including mobile data, the microphone pauses. Screen timeout stays unchanged. Samsung's PIN and lock-screen trust are configured separately in Modes and Routines.",12,MUTED,Typeface.NORMAL));
-        handler.postDelayed(new Runnable(){@Override public void run(){
-            HomeWifi.Connection c=HomeWifi.current(MainActivity.this);
-            wifiState.setText("Network: "+c.diagnostic);
-            selectedWifi.setText("Trusted network: "+prefs.getString(HomeWifi.PREF_SSID,"Not configured"));
-            if(!isFinishing())handler.postDelayed(this,1500);
-        }},300);
-        page.addView(wifi);
-        addGap(page,16);
         LinearLayout settings = panel();
         settings.addView(text("SPEECH RECOGNITION", 12, MINT, Typeface.BOLD));
         addGap(settings, 9);
@@ -203,7 +154,7 @@ public final class MainActivity extends Activity {
         LinearLayout actions = panel();
         actions.addView(text("CHATGPT HANDOFF", 12, MINT, Typeface.BOLD));
         addGap(actions, 9);
-        TextView about = text("On trusted home Wi-Fi, Hey Mate attempts to wake the display, swipe up if Samsung Extend Unlock says no PIN is required, then locate the page with Halifax, DeepSeek and Proton Mail and tap Voice. It never enters your PIN.", 13, Color.WHITE, Typeface.NORMAL);
+        TextView about = text("Hey Mate wakes the display, swipes up only when Samsung Extend Unlock says no PIN is required, then finds the page with Halifax, DeepSeek and Proton Mail and taps Voice. Samsung handles trusted places; no Wi-Fi setup needed here.", 13, Color.WHITE, Typeface.NORMAL);
         about.setLineSpacing(dp(2), 1.0f);
         actions.addView(about);
         addGap(actions, 15);
