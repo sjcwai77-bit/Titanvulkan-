@@ -16,9 +16,6 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
-import android.net.ConnectivityManager;
-import android.net.Network;
-import android.net.NetworkCapabilities;
 
 public final class WakeService extends Service {
     public static final String ACTION_START = "com.sjcw.heymate.START";
@@ -40,10 +37,6 @@ public final class WakeService extends Service {
     private boolean paused = false;
     private static WakeService activeInstance;
     private NotificationManager notifications;
-    private ConnectivityManager connectivity;
-    private ConnectivityManager.NetworkCallback networkCallback;
-    private boolean wifiPaused=false;
-    private final Runnable reevaluate=()->applyWifiGuard();
 
     @Override public void onCreate() {
         super.onCreate();
@@ -55,15 +48,6 @@ public final class WakeService extends Service {
             }
             @Override public void trigger() { onWake(); }
         });
-        connectivity=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
-        if(connectivity!=null) {
-            networkCallback=new ConnectivityManager.NetworkCallback(){
-                @Override public void onAvailable(Network n){ handler.postDelayed(reevaluate,450); }
-                @Override public void onLost(Network n){ handler.post(reevaluate); }
-                @Override public void onCapabilitiesChanged(Network n,NetworkCapabilities c){handler.postDelayed(reevaluate,350);}
-            };
-            try {connectivity.registerDefaultNetworkCallback(networkCallback);}catch(Exception ignored){}
-        }
         notifications = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         notifications.createNotificationChannel(new NotificationChannel(CHANNEL, "Hey Mate — Listening", NotificationManager.IMPORTANCE_LOW));
         notifications.createNotificationChannel(new NotificationChannel(TRIGGER_CHANNEL, "Hey Mate — Wake detected", NotificationManager.IMPORTANCE_HIGH));
@@ -83,7 +67,7 @@ public final class WakeService extends Service {
         if (ACTION_RESUME.equals(action)) { paused=false; getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("voice_pending", false).putBoolean("voice_active", false).apply(); }
         showForeground();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING, true).apply();
-        applyWifiGuard();
+        if (!paused) beginListening();
         return START_STICKY;
     }
 
@@ -97,7 +81,7 @@ public final class WakeService extends Service {
         Notification n = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("SJCW Hey Mate")
-.setContentText(wifiPaused ? "Paused: not on trusted home Wi-Fi" : paused ? "ChatGPT voice handoff — resume when finished" : "Listening in background for Hey mate")
+.setContentText(paused ? "ChatGPT voice handoff — resume when finished" : "Listening in background for Hey mate")
                 .setContentIntent(open).setOngoing(true)
                 .addAction(new Notification.Action.Builder(null, "Resume", resume).build())
                 .addAction(new Notification.Action.Builder(null, "Stop listening", stop).build())
@@ -107,20 +91,8 @@ public final class WakeService extends Service {
         } else startForeground(ONGOING_NOTIFICATION, n);
     }
 
-    private void applyWifiGuard() {
-        if(stopping||engine==null)return;
-        boolean trusted=HomeWifi.trusted(this);
-        wifiPaused=!trusted;
-        if(!trusted){
-            engine.pause();
-            setStatus("Waiting for trusted home Wi-Fi · "+HomeWifi.current(this).diagnostic);
-        }else if(!paused){
-            beginListening();
-        }
-        showForeground();
-    }
     private void beginListening() {
-        if (stopping || paused || wifiPaused || engine == null) return;
+        if (stopping || paused || engine == null) return;
         engine.start();
     }
 
@@ -129,7 +101,7 @@ public final class WakeService extends Service {
     }
 
     private void onWake() {
-        if(stopping || paused || !HomeWifi.trusted(this)) return;
+        if(stopping || paused) return;
         paused = true;
         engine.pause();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
@@ -182,7 +154,7 @@ public final class WakeService extends Service {
         paused=false;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("voice_pending",false).putBoolean("voice_active",false).apply();
         showForeground();
-        handler.postDelayed(this::applyWifiGuard,700);
+        handler.postDelayed(this::beginListening,700);
     }
     public static void voiceStarted() { WakeService w=activeInstance; if(w!=null) w.handler.post(() -> { w.paused=true; w.setStatus("Home shortcut tapped; ChatGPT Voice should now open"); w.showForeground(); }); }
     public static void voiceEnded() { WakeService w=activeInstance; if(w!=null) w.handler.post(w::resumeListening); }
@@ -190,7 +162,6 @@ public final class WakeService extends Service {
     private void stopCompletely(String reason) {
         stopping = true;
         handler.removeCallbacksAndMessages(null);
-        if (connectivity!=null && networkCallback!=null){try{connectivity.unregisterNetworkCallback(networkCallback);}catch(Exception ignored){}}
         if (engine != null) engine.shutdown();
         if (reason != null) setStatus(reason);
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
