@@ -128,10 +128,14 @@ public final class MainActivity extends Activity {
         LinearLayout actions = panel();
         actions.addView(text("CHATGPT HANDOFF", 12, MINT, Typeface.BOLD));
         addGap(actions, 9);
-        TextView about = text("Enable ChatGPT → Settings → Voice → Start with Voice. Opening ChatGPT to a new or empty chat can then start voice automatically.", 13, Color.WHITE, Typeface.NORMAL);
+        TextView about = text("For automatic Voice button pressing, enable SJCW Hey Mate under Android Accessibility settings. In ChatGPT, also enable Settings → Voice → Start with Voice if available.", 13, Color.WHITE, Typeface.NORMAL);
         about.setLineSpacing(dp(2), 1.0f);
         actions.addView(about);
         addGap(actions, 15);
+        Button access = button("ENABLE VOICE BUTTON ACCESS", MINT, BACKGROUND);
+        access.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        actions.addView(access, new LinearLayout.LayoutParams(-1, dp(51)));
+        addGap(actions, 12);
         Button open = button("OPEN CHATGPT", PANEL, MINT);
         open.setOnClickListener(v -> openChatGPT());
         actions.addView(open, new LinearLayout.LayoutParams(-1, dp(50)));
@@ -145,7 +149,7 @@ public final class MainActivity extends Activity {
         page.addView(actions);
         addGap(page, 19);
 
-        TextView caveat = text("ANDROID NOTE · Begin listening while the app is open. A notification indicates microphone use. On a locked phone, or when Android blocks background launch, you may need to unlock or tap the notification. Listening stops after a wake-up; tap Start again.", 12, MUTED, Typeface.NORMAL);
+        TextView caveat = text("ANDROID NOTE · Begin listening while the app is open. A notification indicates microphone use. On a locked phone, or when Android blocks background launch, you may need to unlock or tap the notification. Listening continues with the window closed or minimised. It pauses while ChatGPT Voice uses the microphone, and should resume when voice closes if Android exposes that transition. Otherwise use Resume in the notification. Android may still stop microphone access after force-stop or system restrictions.", 12, MUTED, Typeface.NORMAL);
         caveat.setLineSpacing(dp(3), 1f);
         page.addView(caveat);
         setContentView(scroll);
