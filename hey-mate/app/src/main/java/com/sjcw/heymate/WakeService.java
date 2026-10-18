@@ -81,11 +81,13 @@ public final class WakeService extends Service implements RecognitionListener {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         PendingIntent open = PendingIntent.getActivity(this, 4, new Intent(this, MainActivity.class),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent resume = PendingIntent.getService(this, 5, new Intent(this, WakeService.class).setAction(ACTION_RESUME), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("SJCW Hey Mate")
-                .setContentText("Listening for ‘Hey mate’ · tap to manage")
+                .setContentText(paused ? "ChatGPT voice handoff — resume when finished" : "Listening in background for Hey mate")
                 .setContentIntent(open).setOngoing(true)
+                .addAction(new Notification.Action.Builder(null, "Resume", resume).build())
                 .addAction(new Notification.Action.Builder(null, "Stop listening", stop).build())
                 .build();
         if (Build.VERSION.SDK_INT >= 29) {
@@ -163,6 +165,7 @@ public final class WakeService extends Service implements RecognitionListener {
         Intent chatGPT = getPackageManager().getLaunchIntentForPackage("com.openai.chatgpt");
         if (chatGPT == null) {
             setStatus("ChatGPT not installed");
+            resumeListening();
         } else {
             chatGPT.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             PendingIntent openChat = PendingIntent.getActivity(this, 42, chatGPT,
@@ -211,6 +214,7 @@ public final class WakeService extends Service implements RecognitionListener {
 
     @Override public void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        if (activeInstance == this) activeInstance = null;
         if (recognizer != null) { try { recognizer.destroy(); } catch (Exception ignored) { } recognizer = null; }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING, false).apply();
         super.onDestroy();
@@ -222,7 +226,7 @@ public final class WakeService extends Service implements RecognitionListener {
     @Override public void onBufferReceived(byte[] buffer) { }
     @Override public void onEndOfSpeech() { }
     @Override public void onError(int error) {
-        if (stopping) return;
+        if (stopping || paused) return;
         if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS || error == SpeechRecognizer.ERROR_CLIENT) {
             setStatus("Recognition failed (error " + error + "). Restart listening.");
             stopCompletely(null);
@@ -235,12 +239,12 @@ public final class WakeService extends Service implements RecognitionListener {
         scheduleRetry(Math.min(12000, 600 + (long)consecutiveFailures * 650));
     }
     @Override public void onResults(Bundle results) {
-        if (stopping) return;
+        if (stopping || paused) return;
         if (matched(results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))) onWake();
         else scheduleRetry(350);
     }
     @Override public void onPartialResults(Bundle partialResults) {
-        if (!stopping && matched(partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))) onWake();
+        if (!stopping && !paused && matched(partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))) onWake();
     }
     @Override public void onEvent(int eventType, Bundle params) { }
 }
