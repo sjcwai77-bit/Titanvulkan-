@@ -75,7 +75,7 @@ public final class VoiceAssistService extends AccessibilityService {
         },h);
     }
     private boolean showsVoiceScreen(AccessibilityNodeInfo root) {
-        return treeContains(root,"end voice","exit voice","mute microphone","leave voice");
+        return treeContains(root,"end voice","exit voice","mute microphone") || treeContains(root,"leave voice","end conversation","exit conversation");
     }
     private boolean hasComposer(AccessibilityNodeInfo root) {
         return treeContains(root,"message chatgpt","ask anything","send message");
