@@ -17,14 +17,8 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
-import android.speech.RecognitionListener;
-import android.speech.RecognizerIntent;
-import android.speech.SpeechRecognizer;
-import java.util.ArrayList;
-import java.util.Locale;
-import java.util.regex.Pattern;
 
-public final class WakeService extends Service implements RecognitionListener {
+public final class WakeService extends Service {
     public static final String ACTION_START = "com.sjcw.heymate.START";
     public static final String ACTION_STOP = "com.sjcw.heymate.STOP";
     public static final String PREFS = "hey_mate";
@@ -38,20 +32,23 @@ public final class WakeService extends Service implements RecognitionListener {
     private static final String TRIGGER_CHANNEL = "hey_mate_trigger";
     private static final int ONGOING_NOTIFICATION = 201;
     private static final int TRIGGER_NOTIFICATION = 202;
-    private static final Pattern WAKE = Pattern.compile("(?:^|\\b)(?:hey|hi|hay)\\s+mate(?:\\b|$)");
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable retryRunnable = this::beginListening;
-    private SpeechRecognizer recognizer;
-    private boolean listening = false;
+    private OfflineWakeEngine engine;
     private boolean stopping = false;
     private boolean paused = false;
     private static WakeService activeInstance;
-    private int consecutiveFailures = 0;
     private NotificationManager notifications;
 
     @Override public void onCreate() {
         super.onCreate();
         activeInstance = this;
+        engine = new OfflineWakeEngine(this, new OfflineWakeEngine.Callbacks() {
+            @Override public void status(String t) { setStatus(t); }
+            @Override public void heard(String t) {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(LAST_HEARD,t).apply();
+            }
+            @Override public void trigger() { onWake(); }
+        });
         notifications = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         notifications.createNotificationChannel(new NotificationChannel(CHANNEL, "Hey Mate — Listening", NotificationManager.IMPORTANCE_LOW));
         notifications.createNotificationChannel(new NotificationChannel(TRIGGER_CHANNEL, "Hey Mate — Wake detected", NotificationManager.IMPORTANCE_HIGH));
@@ -71,7 +68,7 @@ public final class WakeService extends Service implements RecognitionListener {
         if (ACTION_RESUME.equals(action)) { paused=false; getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("voice_pending", false).putBoolean("voice_active", false).apply(); }
         showForeground();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING, true).apply();
-        if (!paused && recognizer == null) beginListening();
+        if (!paused) beginListening();
         return START_STICKY;
     }
 
@@ -96,58 +93,12 @@ public final class WakeService extends Service implements RecognitionListener {
     }
 
     private void beginListening() {
-        if (stopping || paused || listening) return;
-        handler.removeCallbacks(retryRunnable);
-        try {
-            if (recognizer != null) { recognizer.destroy(); recognizer = null; }
-            boolean offline = Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this);
-            if (offline) {
-                recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
-            } else if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(ALLOW_FALLBACK, false)
-                    && SpeechRecognizer.isRecognitionAvailable(this)) {
-                recognizer = SpeechRecognizer.createSpeechRecognizer(this);
-            } else {
-                setStatus("On-device recognition unavailable. Enable speech-service fallback.");
-                stopCompletely(null);
-                return;
-            }
-            recognizer.setRecognitionListener(this);
-            Intent request = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-            request.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            request.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB");
-            request.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-            request.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
-            request.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, offline);
-            listening = true;
-            setStatus(offline ? "Listening · on-device recognition" : "Listening · speech service (may use internet)");
-            recognizer.startListening(request);
-        } catch (Exception failure) {
-            listening = false;
-            setStatus("Speech service error: " + failure.getClass().getSimpleName());
-            scheduleRetry(3000);
-        }
-    }
-
-    private void scheduleRetry(long millis) {
-        if (stopping || paused) return;
-        listening = false;
-        handler.removeCallbacks(retryRunnable);
-        handler.postDelayed(retryRunnable, millis);
+        if (stopping || paused || engine == null) return;
+        engine.start();
     }
 
     private void setStatus(String value) {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(STATUS, value).apply();
-    }
-
-    private boolean matched(ArrayList<String> phrases) {
-        if (phrases == null) return false;
-        for (String phrase : phrases) {
-            if (phrase == null) continue;
-            String text = phrase.toLowerCase(Locale.UK).replaceAll("[^a-z]+", " ").trim();
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(LAST_HEARD, text).apply();
-            if (WAKE.matcher(text).find()) return true;
-        }
-        return false;
     }
 
     private void onWake() {
