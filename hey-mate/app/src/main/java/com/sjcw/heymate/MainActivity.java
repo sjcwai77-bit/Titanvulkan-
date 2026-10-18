@@ -203,7 +203,7 @@ public final class MainActivity extends Activity {
         LinearLayout actions = panel();
         actions.addView(text("CHATGPT HANDOFF", 12, MINT, Typeface.BOLD));
         addGap(actions, 9);
-        TextView about = text("Hey Mate searches your Samsung home screens for the page with Halifax, DeepSeek and Proton Mail, then presses the central Voice shortcut once. Tap position remains adjustable.", 13, Color.WHITE, Typeface.NORMAL);
+        TextView about = text("On trusted home Wi-Fi, Hey Mate attempts to wake the display, swipe up if Samsung Extend Unlock says no PIN is required, then locate the page with Halifax, DeepSeek and Proton Mail and tap Voice. It never enters your PIN.", 13, Color.WHITE, Typeface.NORMAL);
         about.setLineSpacing(dp(2), 1.0f);
         actions.addView(about);
         addGap(actions, 15);
