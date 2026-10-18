@@ -150,11 +150,11 @@ public final class WakeService extends Service implements RecognitionListener {
 
     private void onWake() {
         if (stopping) return;
-        stopping = true;
+        paused = true;
         handler.removeCallbacks(retryRunnable);
-        setStatus("Wake phrase detected · opening ChatGPT");
+        setStatus("Hey mate detected — opening ChatGPT Voice");
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putLong(LAST_TRIGGER, System.currentTimeMillis()).apply();
+                .putLong(LAST_TRIGGER, System.currentTimeMillis()).putBoolean("voice_pending",true).putBoolean("voice_active",false).apply();
         listening = false;
         if (recognizer != null) {
             try { recognizer.cancel(); recognizer.destroy(); } catch (Exception ignored) { }
@@ -181,8 +181,19 @@ public final class WakeService extends Service implements RecognitionListener {
                 }, 350);
             }
         }
-        handler.postDelayed(() -> stopCompletely(null), 850);
+        showForeground();
+        handler.postDelayed(() -> { if (paused && getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("voice_pending",false)) resumeListening(); }, 24000);
     }
+
+    private void resumeListening() {
+        if (stopping) return;
+        paused=false;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("voice_pending",false).putBoolean("voice_active",false).apply();
+        showForeground();
+        handler.postDelayed(this::beginListening,700);
+    }
+    public static void voiceStarted() { WakeService w=activeInstance; if(w!=null) w.handler.post(() -> { w.paused=true; w.setStatus("Voice activated — microphone handed to ChatGPT"); w.showForeground(); }); }
+    public static void voiceEnded() { WakeService w=activeInstance; if(w!=null) w.handler.post(w::resumeListening); }
 
     private void stopCompletely(String reason) {
         stopping = true;
