@@ -26,8 +26,8 @@ jobs:
       - name: Compile APK
         run: gradle --no-daemon -p hey-mate :app:assembleDebug
       - name: Package APK
-        run: cp hey-mate/app/build/outputs/apk/debug/app-debug.apk SJCW-Hey-Mate-v4.apk
+        run: cp hey-mate/app/build/outputs/apk/debug/app-debug.apk SJCW-Hey-Mate-v5.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: SJCW-Hey-Mate-v4-APK
-          path: SJCW-Hey-Mate-v4.apk
+          name: SJCW-Hey-Mate-v5-APK
+          path: SJCW-Hey-Mate-v5.apk
