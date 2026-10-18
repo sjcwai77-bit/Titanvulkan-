@@ -115,71 +115,71 @@ public final class VoiceAssistService extends AccessibilityService {
         if(!navigating || gestureBusy || tapIssued)return;
         PowerManager pm=(PowerManager)getSystemService(Context.POWER_SERVICE);
         if(pm!=null && !pm.isInteractive()){
-            if(++lockWaitAttempts<8) {
+            if(++lockWaitAttempts<8){
                 wakeDisplayForVoice();
                 handler.postDelayed(this::handleTrustedKeyguard,450);
-            } else fail("Android did not turn screen on; unlock manually");
+            }else fail("Android did not turn on the display");
             return;
         }
         KeyguardManager kg=keyguard();
-        if(kg==null){fail("Could not verify lock-screen state");return;}
+        if(kg==null){fail("Could not read Android keyguard");return;}
         if(!kg.isKeyguardLocked()){
+            // Dismissal is confirmed before accessing any launcher shortcut.
             goHomeThenTap();
             return;
         }
-        // An open padlock / Extend Unlock may leave the keyguard showing;
-        // isDeviceLocked() distinguishes it from a real authentication lock.
-        if(kg.isDeviceLocked()){
-            // Give Extend Unlock a little time to release after screen-on.
-            if(++lockWaitAttempts<=5){
-                update("Waiting for Samsung Extend Unlock trust…");
-                handler.postDelayed(this::handleTrustedKeyguard,420);
-            }else fail("PIN or biometric required; leaving phone secure");
+        if(!sentUnlockSwipe){
+            // Samsung Extend Unlock can still report "device locked" until the
+            // first physical up-swipe. Do not gate this gesture on that flag.
+            sentUnlockSwipe=true;
+            lockWaitAttempts=0;
+            unlockSwipe();
             return;
         }
-        if(sentUnlockSwipe){
-            if(++lockWaitAttempts<10)
-                handler.postDelayed(this::handleTrustedKeyguard,310);
-            else fail("Trusted lock screen did not dismiss; manual swipe needed");
-            return;
+        // One swipe only. Allow Samsung time to finish the lock-screen animation.
+        // A credential prompt stays untouched if one is required.
+        if(++lockWaitAttempts<=10){
+            update("Waiting for lock-screen swipe to complete ("+lockWaitAttempts+"/10)");
+            handler.postDelayed(this::handleTrustedKeyguard,350);
+        }else{
+            fail("Screen still locked after swipe — PIN may be required or Samsung blocked the gesture");
         }
-        sentUnlockSwipe=true;
-        unlockSwipe();
     }
 
     private void unlockSwipe(){
         if(!navigating || gestureBusy)return;
         KeyguardManager kg=keyguard();
-        if(kg==null || kg.isDeviceLocked() || !kg.isKeyguardLocked()){
-            handleTrustedKeyguard();return;
+        if(kg==null){fail("Could not read lock-screen status");return;}
+        if(!kg.isKeyguardLocked()){
+            handleTrustedKeyguard();
+            return;
         }
         gestureBusy=true;
-        update("Trusted screen detected — swiping up once");
+        update("Swiping up on Samsung lock screen");
         Point size=new Point();
         ((WindowManager)getSystemService(Context.WINDOW_SERVICE))
             .getDefaultDisplay().getRealSize(size);
         Path swipe=new Path();
-        swipe.moveTo(size.x*0.5f,size.y*0.84f);
-        swipe.lineTo(size.x*0.5f,size.y*0.28f);
+        swipe.moveTo(size.x*0.50f,size.y*0.86f);
+        swipe.lineTo(size.x*0.50f,size.y*0.20f);
         GestureDescription g=new GestureDescription.Builder()
-            .addStroke(new GestureDescription.StrokeDescription(swipe,0,390)).build();
+            .addStroke(new GestureDescription.StrokeDescription(swipe,0,480)).build();
         if(!dispatchGesture(g,new GestureResultCallback(){
             @Override public void onCompleted(GestureDescription result){
                 gestureBusy=false;
+                update("Up-swipe delivered; waiting for unlocked home screen");
                 handler.postDelayed(()->{
-                    KeyguardManager state=keyguard();
-                    if(state!=null && state.isDeviceLocked()){
-                        fail("Android now requires a PIN; cannot continue");
-                    }else handleTrustedKeyguard();
-                },640);
+                    // Never enter a PIN, password or biometric authentication.
+                    handleTrustedKeyguard();
+                },570);
             }
             @Override public void onCancelled(GestureDescription result){
                 gestureBusy=false;
-                fail("Android cancelled trusted-screen swipe");
+                fail("Samsung cancelled lock-screen up-swipe");
             }
         },handler)){
             gestureBusy=false;
-            fail("Android did not permit the trusted-screen swipe");
+            fail("Samsung blocked accessibility swipe on lock screen");
         }
     }
     private void goHomeThenTap(){
