@@ -12,7 +12,6 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -104,12 +103,7 @@ public final class WakeService extends Service {
     private void onWake() {
         if(stopping || paused) return;
         paused = true;
-        handler.removeCallbacks(retryRunnable);
-        listening = false;
-        if(recognizer != null) {
-            try { recognizer.cancel(); recognizer.destroy(); } catch(Exception ignored) {}
-            recognizer = null;
-        }
+        engine.pause();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putLong(LAST_TRIGGER,System.currentTimeMillis())
             .putBoolean("voice_pending",true)
@@ -167,52 +161,23 @@ public final class WakeService extends Service {
 
     private void stopCompletely(String reason) {
         stopping = true;
-        listening = false;
-        handler.removeCallbacks(retryRunnable);
-        if (recognizer != null) {
-            try { recognizer.cancel(); recognizer.destroy(); } catch (Exception ignored) { }
-            recognizer = null;
-        }
+        handler.removeCallbacksAndMessages(null);
+        if (engine != null) engine.shutdown();
         if (reason != null) setStatus(reason);
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING, false).apply();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean(RUNNING,false).putBoolean("voice_pending",false)
+            .putBoolean("voice_active",false).apply();
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
 
     @Override public void onDestroy() {
+        stopping = true;
         handler.removeCallbacksAndMessages(null);
-        if (activeInstance == this) activeInstance = null;
-        if (recognizer != null) { try { recognizer.destroy(); } catch (Exception ignored) { } recognizer = null; }
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING, false).apply();
+        if(activeInstance == this) activeInstance = null;
+        if(engine != null) engine.shutdown();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING,false).apply();
         super.onDestroy();
     }
     @Override public IBinder onBind(Intent intent) { return null; }
-    @Override public void onReadyForSpeech(Bundle params) { consecutiveFailures = 0; }
-    @Override public void onBeginningOfSpeech() { }
-    @Override public void onRmsChanged(float rmsdB) { }
-    @Override public void onBufferReceived(byte[] buffer) { }
-    @Override public void onEndOfSpeech() { }
-    @Override public void onError(int error) {
-        if (stopping || paused) return;
-        if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
-            setStatus("Recognition failed (error " + error + "). Restart listening.");
-            stopCompletely(null);
-            return;
-        }
-        if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) consecutiveFailures = 0;
-        else consecutiveFailures++;
-        if (error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT && error != SpeechRecognizer.ERROR_NO_MATCH) {
-            setStatus("Reconnecting speech service (error " + error + ")");
-        }
-        scheduleRetry(Math.min(12000, 600 + (long)consecutiveFailures * 650));
-    }
-    @Override public void onResults(Bundle results) {
-        if (stopping || paused) return;
-        if (matched(results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))) onWake();
-        else scheduleRetry(350);
-    }
-    @Override public void onPartialResults(Bundle partialResults) {
-        if (!stopping && !paused && matched(partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))) onWake();
-    }
-    @Override public void onEvent(int eventType, Bundle params) { }
 }
