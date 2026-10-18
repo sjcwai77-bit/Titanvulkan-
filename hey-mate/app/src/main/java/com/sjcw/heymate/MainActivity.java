@@ -105,6 +105,26 @@ public final class MainActivity extends Activity {
             tapState.setText("Shortcut status: " + prefs.getString("shortcut_status","Not attempted yet"));
             if(!isFinishing())handler.postDelayed(this,1500);
         }},1000);
+        addGap(log, 10);
+        TextView modelStage = text("Model state: —",13,Color.WHITE,Typeface.NORMAL);
+        log.addView(modelStage);
+        addGap(log, 6);
+        TextView micLevel = text("Mic signal: —",13,MINT,Typeface.BOLD);
+        log.addView(micLevel);
+        addGap(log, 6);
+        TextView latestSpeech = text("Recognised words: —",13,MUTED,Typeface.NORMAL);
+        log.addView(latestSpeech);
+        addGap(log, 5);
+        TextView engineError = text("Listener error: none",12,MUTED,Typeface.NORMAL);
+        log.addView(engineError);
+        handler.postDelayed(new Runnable(){ @Override public void run() {
+            modelStage.setText("Model state: "+prefs.getString("engine_stage","Not started"));
+            micLevel.setText("Mic signal: "+prefs.getString("mic_level","0")+" / 100");
+            latestSpeech.setText("Recognised words: "+prefs.getString("latest_recognition","—"));
+            String err=prefs.getString("engine_error","");
+            engineError.setText(err.isEmpty()?"Listener error: none":"Listener error: "+err);
+            if(!isFinishing())handler.postDelayed(this,900);
+        }},600);
         page.addView(log);
         addGap(page, 16);
 
