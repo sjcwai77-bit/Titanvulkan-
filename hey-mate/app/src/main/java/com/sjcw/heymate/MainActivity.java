@@ -154,7 +154,7 @@ public final class MainActivity extends Activity {
         LinearLayout actions = panel();
         actions.addView(text("CHATGPT HANDOFF", 12, MINT, Typeface.BOLD));
         addGap(actions, 9);
-        TextView about = text("Hey Mate wakes the display, swipes up only when Samsung Extend Unlock says no PIN is required, then finds the page with Halifax, DeepSeek and Proton Mail and taps Voice. Samsung handles trusted places; no Wi-Fi setup needed here.", 13, Color.WHITE, Typeface.NORMAL);
+        TextView about = text("Hey Mate wakes the display, swipes up once on the Samsung lock screen, then continues only if the lock screen has disappeared. It finds the home page with Halifax, DeepSeek and Proton Mail and taps the central Voice shortcut. If Samsung requires a PIN, it stops without entering credentials.", 13, Color.WHITE, Typeface.NORMAL);
         about.setLineSpacing(dp(2), 1.0f);
         actions.addView(about);
         addGap(actions, 15);
