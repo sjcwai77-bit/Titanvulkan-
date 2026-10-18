@@ -16,9 +16,24 @@ public final class VoiceAssistService extends AccessibilityService {
     private final Handler h=new Handler(Looper.getMainLooper());
     private long lastAttempt=0;
     private boolean performed=false;
+    private boolean sawVoiceScreen=false;
+    private long voiceButtonAt=0;
     private SharedPreferences prefs(){return getSharedPreferences(WakeService.PREFS,MODE_PRIVATE);}
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         if(event.getPackageName()==null||!CHATGPT.contentEquals(event.getPackageName())) return;
+        if(prefs().getBoolean("voice_active",false)) {
+            AccessibilityNodeInfo root=getRootInActiveWindow();
+            if(root!=null && root.getPackageName()!=null && CHATGPT.contentEquals(root.getPackageName())) {
+                boolean voice=showsVoiceScreen(root);
+                if(voice) sawVoiceScreen=true;
+                else if(sawVoiceScreen && System.currentTimeMillis()-voiceButtonAt>2500 && hasComposer(root)) {
+                    sawVoiceScreen=false;
+                    prefs().edit().putBoolean("voice_active",false).apply();
+                    WakeService.voiceEnded();
+                }
+            }
+            return;
+        }
         if(!prefs().getBoolean("voice_pending",false)){performed=false;return;}
         long now=System.currentTimeMillis();
         if(now-lastAttempt<1800||performed)return;
@@ -59,8 +74,26 @@ public final class VoiceAssistService extends AccessibilityService {
             @Override public void onCompleted(GestureDescription g){markDone();}
         },h);
     }
+    private boolean showsVoiceScreen(AccessibilityNodeInfo root) {
+        return treeContains(root,"end voice","exit voice","mute microphone","leave voice");
+    }
+    private boolean hasComposer(AccessibilityNodeInfo root) {
+        return treeContains(root,"message chatgpt","ask anything","send message");
+    }
+    private boolean treeContains(AccessibilityNodeInfo root,String a,String b,String c) {
+        ArrayDeque<AccessibilityNodeInfo> q=new ArrayDeque<>();q.add(root);int n=0;
+        while(!q.isEmpty() && n++<230) {
+            AccessibilityNodeInfo v=q.removeFirst();
+            CharSequence d=v.getContentDescription(),t=v.getText(),hint=v.getHintText();
+            String s=((d==null?"":d)+" "+(t==null?"":t)+" "+(hint==null?"":hint)).toLowerCase(Locale.ROOT);
+            if(s.contains(a)||s.contains(b)||s.contains(c))return true;
+            for(int i=0;i<v.getChildCount();i++){AccessibilityNodeInfo child=v.getChild(i);if(child!=null)q.add(child);}
+        }
+        return false;
+    }
     private void markDone(){
         performed=true;
+        voiceButtonAt=System.currentTimeMillis();
         prefs().edit().putBoolean("voice_pending",false).putBoolean("voice_active",true).apply();
         WakeService.voiceStarted();
     }
