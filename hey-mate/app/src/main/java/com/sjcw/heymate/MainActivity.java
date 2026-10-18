@@ -189,7 +189,7 @@ public final class MainActivity extends Activity {
         page.addView(actions);
         addGap(page, 19);
 
-        TextView caveat = text("ANDROID NOTE · Begin listening while the app is open. A notification indicates microphone use. On a locked phone, or when Android blocks background launch, you may need to unlock or tap the notification. Listening continues with the window minimised. On "Hey mate" it returns to the home screen and taps the configured shortcut once. Listening pauses while ChatGPT Voice has the microphone, then resumes when the conversation closes if detectable; otherwise tap Resume in the notification. Android may still stop microphone access after force-stop or system restrictions.", 12, MUTED, Typeface.NORMAL);
+        TextView caveat = text("ANDROID NOTE · Begin listening while the app is open. A notification indicates microphone use. On a locked phone, or when Android blocks background launch, you may need to unlock or tap the notification. Listening continues with the window minimised. On hearing Hey Mate, it returns to the home screen and taps the configured shortcut once. Listening pauses while ChatGPT Voice has the microphone, then resumes when the conversation closes if detectable; otherwise tap Resume in the notification. Android may still stop microphone access after force-stop or system restrictions.", 12, MUTED, Typeface.NORMAL);
         caveat.setLineSpacing(dp(3), 1f);
         page.addView(caveat);
         setContentView(scroll);
