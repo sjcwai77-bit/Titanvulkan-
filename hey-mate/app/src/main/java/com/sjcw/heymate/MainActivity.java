@@ -115,12 +115,20 @@ public final class MainActivity extends Activity {
         TextView latestSpeech = text("Recognised words: —",13,MUTED,Typeface.NORMAL);
         log.addView(latestSpeech);
         addGap(log, 5);
+        TextView sleepState = text("Sleep diagnostic: —",12,MINT,Typeface.NORMAL);
+        log.addView(sleepState);
+        addGap(log, 5);
         TextView engineError = text("Listener error: none",12,MUTED,Typeface.NORMAL);
         log.addView(engineError);
         handler.postDelayed(new Runnable(){ @Override public void run() {
             modelStage.setText("Model state: "+prefs.getString("engine_stage","Not started"));
             micLevel.setText("Mic signal: "+prefs.getString("mic_level","0")+" / 100");
             latestSpeech.setText("Recognised words: "+prefs.getString("latest_recognition","—"));
+            long age=System.currentTimeMillis()-prefs.getLong("last_audio_at",0);
+            sleepState.setText("Screen: "+prefs.getString("screen_state","unknown")+
+                " · CPU lock: "+prefs.getBoolean("cpu_wake_lock",false)+
+                " · Last audio: "+(age>=0 && age<86400000 ? age/1000+"s ago" : "none")+
+                " · "+prefs.getString("recovery_status","No recovery needed"));
             String err=prefs.getString("engine_error","");
             engineError.setText(err.isEmpty()?"Listener error: none":"Listener error: "+err);
             if(!isFinishing())handler.postDelayed(this,900);
