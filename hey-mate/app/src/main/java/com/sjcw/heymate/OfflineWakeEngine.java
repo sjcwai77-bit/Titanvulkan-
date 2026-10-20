@@ -113,6 +113,21 @@ final class OfflineWakeEngine {
             try {r.stop();}catch(Exception ignored){}
         }
     }
+    // Restart capture in the existing single-thread executor. The restart request
+    // first stops the blocking AudioRecord read, then the prior loop cleans up.
+    void restart() {
+        if (disposed) return;
+        wantsAudio.set(false);
+        AudioRecord r = audio;
+        if (r != null) {
+            try { r.stop(); } catch (Exception ignored) {}
+        }
+        executor.execute(() -> {
+            if (disposed) return;
+            busy.set(false);
+            start();
+        });
+    }
     void shutdown() {
         disposed=true;
         wantsAudio.set(false);
