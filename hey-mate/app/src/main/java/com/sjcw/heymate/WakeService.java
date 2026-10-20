@@ -50,7 +50,8 @@ public final class WakeService extends Service {
                 long now = System.currentTimeMillis();
                 android.content.SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
                 long recent = Math.max(listenStartedAt, p.getLong("last_audio_at", 0));
-                boolean stale = recent > 0 && now - recent > 15000;
+                boolean stale = recent > 0 && now - recent > 15000 &&
+                    "Listening".equals(p.getString("engine_stage", ""));
                 String stage = p.getString("engine_stage", "");
                 boolean failed = "ERROR".equals(stage) || "Microphone stopped".equals(stage);
                 if ((stale || failed) && now - lastRecoveryAt > 12000 && recoveryCount < 12) {
@@ -157,6 +158,7 @@ public final class WakeService extends Service {
         if(stopping || paused) return;
         paused = true;
         engine.pause();
+        releaseCpuLock();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putLong(LAST_TRIGGER,System.currentTimeMillis())
             .putBoolean("voice_pending",true)
