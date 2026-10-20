@@ -37,6 +37,55 @@ public final class WakeService extends Service {
     private boolean paused = false;
     private static WakeService activeInstance;
     private NotificationManager notifications;
+    // An active microphone foreground service does not by itself keep the CPU
+    // awake after display lock. Hold a CPU-only lock while listening.
+    private PowerManager.WakeLock listeningCpuLock;
+    private long listenStartedAt = 0L;
+    private long lastRecoveryAt = 0L;
+    private int recoveryCount = 0;
+    private final Runnable audioWatchdog = new Runnable() {
+        @Override public void run() {
+            if (stopping) return;
+            if (!paused && engine != null) {
+                long now = System.currentTimeMillis();
+                android.content.SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+                long recent = Math.max(listenStartedAt, p.getLong("last_audio_at", 0));
+                boolean stale = recent > 0 && now - recent > 15000;
+                String stage = p.getString("engine_stage", "");
+                boolean failed = "ERROR".equals(stage) || "Microphone stopped".equals(stage);
+                if ((stale || failed) && now - lastRecoveryAt > 12000 && recoveryCount < 12) {
+                    lastRecoveryAt = now;
+                    recoveryCount++;
+                    setStatus("Audio stalled; restarting listener (" + recoveryCount + ")");
+                    p.edit().putString("recovery_status", "Recovery #" + recoveryCount +
+                        ", cause=" + (stale ? "stale microphone" : stage)).apply();
+                    engine.restart();
+                    listenStartedAt = now;
+                }
+                if (!stale && "Listening".equals(stage)) recoveryCount = 0;
+                PowerManager pm = (PowerManager)getSystemService(Context.POWER_SERVICE);
+                p.edit().putString("screen_state", pm != null && pm.isInteractive() ?
+                    "Screen on" : "Screen off")
+                    .putBoolean("cpu_wake_lock", listeningCpuLock != null &&
+                        listeningCpuLock.isHeld()).apply();
+            }
+            handler.postDelayed(this, 4000);
+        }
+    };
+    private void holdCpuWhileListening() {
+        if (listeningCpuLock == null) {
+            PowerManager pm = (PowerManager)getSystemService(Context.POWER_SERVICE);
+            if (pm == null) return;
+            listeningCpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                "SJCWHeyMate:ActiveOfflineWakeRecognizer");
+            listeningCpuLock.setReferenceCounted(false);
+        }
+        if (!listeningCpuLock.isHeld()) listeningCpuLock.acquire();
+    }
+    private void releaseCpuLock() {
+        if (listeningCpuLock != null && listeningCpuLock.isHeld())
+            listeningCpuLock.release();
+    }
 
     @Override public void onCreate() {
         super.onCreate();
@@ -68,6 +117,8 @@ public final class WakeService extends Service {
         showForeground();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING, true).apply();
         if (!paused) beginListening();
+        handler.removeCallbacks(audioWatchdog);
+        handler.postDelayed(audioWatchdog, 4000);
         return START_STICKY;
     }
 
@@ -93,6 +144,8 @@ public final class WakeService extends Service {
 
     private void beginListening() {
         if (stopping || paused || engine == null) return;
+        holdCpuWhileListening();
+        listenStartedAt = System.currentTimeMillis();
         engine.start();
     }
 
@@ -156,13 +209,14 @@ public final class WakeService extends Service {
         showForeground();
         handler.postDelayed(this::beginListening,700);
     }
-    public static void voiceStarted() { WakeService w=activeInstance; if(w!=null) w.handler.post(() -> { w.paused=true; w.setStatus("Home shortcut tapped; ChatGPT Voice should now open"); w.showForeground(); }); }
+    public static void voiceStarted() { WakeService w=activeInstance; if(w!=null) w.handler.post(() -> { w.paused=true; w.releaseCpuLock(); w.setStatus("Home shortcut tapped; ChatGPT Voice should now open"); w.showForeground(); }); }
     public static void voiceEnded() { WakeService w=activeInstance; if(w!=null) w.handler.post(w::resumeListening); }
 
     private void stopCompletely(String reason) {
         stopping = true;
         handler.removeCallbacksAndMessages(null);
         if (engine != null) engine.shutdown();
+        releaseCpuLock();
         if (reason != null) setStatus(reason);
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putBoolean(RUNNING,false).putBoolean("voice_pending",false)
@@ -176,6 +230,7 @@ public final class WakeService extends Service {
         handler.removeCallbacksAndMessages(null);
         if(activeInstance == this) activeInstance = null;
         if(engine != null) engine.shutdown();
+        releaseCpuLock();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(RUNNING,false).apply();
         super.onDestroy();
     }
