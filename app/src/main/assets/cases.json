@@ -1,0 +1,47 @@
+[
+  {
+    "flight": "American Airlines Flight 965",
+    "date": "1995-12-20",
+    "maker": "Boeing",
+    "model": "757-223",
+    "location": "Near Cali, Colombia",
+    "type": "Controlled flight into terrain",
+    "fatalities": 159,
+    "aboard": 163,
+    "outcome": "Crash / hull loss",
+    "summary": "During an approach to Cali at night, navigation errors and loss of situational awareness preceded a collision with mountainous terrain. Four of 163 aboard survived.",
+    "finding": "The investigation identified navigation and crew-resource-management failures.",
+    "sourceTitle": "FAA Lessons Learned",
+    "source": "https://www.faa.gov/lessons_learned/transport_airplane/accidents/N54328"
+  },
+  {
+    "flight": "Qantas Flight 32",
+    "date": "2010-11-04",
+    "maker": "Airbus",
+    "model": "A380-842",
+    "location": "Batam Island / Singapore",
+    "type": "Uncontained engine failure",
+    "fatalities": 0,
+    "aboard": 469,
+    "outcome": "Safe emergency landing",
+    "summary": "An uncontained turbine failure damaged aircraft systems; the crew returned safely to Singapore.",
+    "finding": "ATSB identified a fatigue crack in a nonconforming oil-feed stub pipe.",
+    "sourceTitle": "ATSB AO-2010-089",
+    "source": "https://www.atsb.gov.au/investigations/ao-2010-089"
+  },
+  {
+    "flight": "US Airways Flight 1549",
+    "date": "2009-01-15",
+    "maker": "Airbus",
+    "model": "A320-214",
+    "location": "Hudson River, New York",
+    "type": "Bird strike / dual thrust loss",
+    "fatalities": 0,
+    "aboard": 155,
+    "outcome": "Successful ditching",
+    "summary": "A bird encounter resulted in near-total thrust loss in both engines. All 155 aboard survived the Hudson River ditching.",
+    "finding": "NTSB determined that large birds were ingested into both engines.",
+    "sourceTitle": "NTSB DCA09MA026",
+    "source": "https://www.ntsb.gov/investigations/Pages/DCA09MA026.aspx"
+  }
+]
