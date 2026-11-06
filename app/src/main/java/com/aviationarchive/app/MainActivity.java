@@ -24,6 +24,7 @@ public class MainActivity extends Activity {
  private EditText query;
  private Spinner maker;
  private TextView status;
+ private CheckBox informative;
  private final int navy=Color.rgb(16,33,58),blue=Color.rgb(35,103,169);
  private String currentQuery="",currentMaker="All manufacturers";
  private int offset=0;
@@ -53,18 +54,22 @@ public class MainActivity extends Activity {
   root.addView(text("WORLDWIDE AVIATION OCCURRENCE DATABASE",12,blue));
   long count=DatabaseUtils.longForQuery(database,"SELECT count(*) FROM incidents",null);
   root.addView(text(String.format(Locale.US,"%,d sourced records • Offline • 1902–2026",count),13,Color.DKGRAY));
-  root.addView(text("Data from 124 investigating authorities. Some entries have unknown fields; this is not an exhaustive global census.",12,Color.DKGRAY));
+  root.addView(text("Some source records have limited detail. Select an entry to open its original report.",12,Color.DKGRAY));
   query=new EditText(this);query.setSingleLine(true);query.setTextSize(16);query.setHint("Search airline, aircraft, flight, registration...");query.setText(currentQuery);root.addView(query);
   maker=new Spinner(this);
   ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,brands);maker.setAdapter(adapter);
   int at=Arrays.asList(brands).indexOf(currentMaker);maker.setSelection(Math.max(0,at));root.addView(maker);
+  informative=new CheckBox(this);informative.setText("Show cases with a meaningful narrative");informative.setTextSize(14);informative.setChecked(true);root.addView(informative);
+  Button reset=new Button(this);reset.setText("Clear search and manufacturer filter");root.addView(reset);reset.setOnClickListener(v->{currentMaker="All manufacturers";currentQuery="";offset=0;query.setText("");maker.setSelection(0);refresh();});
   status=text("",13,Color.DKGRAY);root.addView(status);
   ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
   query.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){currentQuery=s.toString();offset=0;refresh();}public void afterTextChanged(Editable e){}});
   maker.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> p){}public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){currentMaker=brands[pos];offset=0;refresh();}});
+  informative.setOnCheckedChangeListener((button,checked)->{offset=0;refresh();});
   refresh();
  }
- private String safe(String s){return s==null||s.trim().isEmpty()?"Unknown":s;}
+ private boolean present(String s){return s!=null&&!s.trim().isEmpty()&&!s.equalsIgnoreCase("unknown")&&!s.equalsIgnoreCase("null");}
+ private String safe(String s){return present(s)?s:"Not supplied";}
  private void refresh(){
   if(list==null||database==null)return;
   list.removeAllViews();
@@ -72,13 +77,14 @@ public class MainActivity extends Activity {
   String[] words=phrase.split("\\s+");
   ArrayList<String> terms=new ArrayList<>();
   for(String w:words)if(w.length()>0)terms.add(w.replace("-"," ") .trim().replace(" ","* ")+"*");
-  StringBuilder sql=new StringBuilder("SELECT id,date,title,manufacturer,aircraft,country,severity,fatalities FROM incidents WHERE 1=1");
+  StringBuilder sql=new StringBuilder("SELECT id,date,title,manufacturer,aircraft,country,severity,fatalities,summary,source,registration FROM incidents WHERE 1=1");
   ArrayList<String> args=new ArrayList<>();
   if(!terms.isEmpty()){
    sql.append(" AND id IN (SELECT rowid FROM incidents_fts WHERE incidents_fts MATCH ?)");
    sql=sql;args.add(String.join(" AND ",terms));
   }
   if(!"All manufacturers".equals(currentMaker)){sql.append(" AND manufacturer=?");args.add(currentMaker);}
+  if(informative!=null&&informative.isChecked()){sql.append(" AND length(trim(coalesce(summary,\'\')))>40");}
   sql.append(" ORDER BY date DESC, id DESC LIMIT 61 OFFSET ").append(offset);
   Cursor c=null;int shown=0;boolean more=false;
   try{
@@ -88,10 +94,17 @@ public class MainActivity extends Activity {
     final long id=c.getLong(0);
     LinearLayout card=column(10);card.setBackgroundColor(Color.WHITE);
     LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,dp(4),0,dp(6));list.addView(card,lp);
-    TextView title=text(safe(c.getString(2)),17,navy);title.setTypeface(null,Typeface.BOLD);card.addView(title);
-    card.addView(text(safe(c.getString(1))+"   •   "+safe(c.getString(3))+"   •   "+safe(c.getString(4)),12,blue));
-    String severity=safe(c.getString(6));String fatalities=c.isNull(7)?"Unknown":String.valueOf(c.getInt(7));
-    card.addView(text("Country: "+safe(c.getString(5))+"   •   "+severity+"   •   Fatalities: "+fatalities,12,Color.DKGRAY));
+    TextView title=text(safe(c.getString(2)),16,navy);title.setTypeface(null,Typeface.BOLD);card.addView(title);
+    String meta=safe(c.getString(1))+(present(c.getString(4))?" • "+c.getString(4):"");
+    card.addView(text(meta,12,blue));
+    ArrayList<String> facts=new ArrayList<>();
+    if(present(c.getString(5)))facts.add("Country: "+c.getString(5));
+    if(present(c.getString(6)))facts.add("Severity: "+c.getString(6));
+    if(!c.isNull(7))facts.add("Fatalities: "+c.getInt(7));
+    if(present(c.getString(10)))facts.add("Registration: "+c.getString(10));
+    if(!facts.isEmpty())card.addView(text(String.join(" • ",facts),12,Color.DKGRAY));
+    if(present(c.getString(8))){String narrative=c.getString(8).replace('\n',' ').trim();if(narrative.length()>190)narrative=narrative.substring(0,190)+"…";card.addView(text(narrative,13,Color.DKGRAY));}
+    if(present(c.getString(9)))card.addView(text("Source: "+c.getString(9)+" • Tap for report",11,blue));
     card.setOnClickListener(v->details(id));
     shown++;
    }
@@ -103,6 +116,7 @@ public class MainActivity extends Activity {
   finally{if(c!=null)c.close();}
  }
  private void section(LinearLayout root,String title,String val){
+  if(!present(val))return;
   TextView t=text(title,14,blue);t.setTypeface(null,Typeface.BOLD);root.addView(t);
   root.addView(text(safe(val),15,navy));
  }
@@ -118,9 +132,10 @@ public class MainActivity extends Activity {
   section(root,"Registration",c.getString(5));section(root,"Country (ISO code)",c.getString(6));
   section(root,"Occurrence type / category",c.getString(7));
   section(root,"Severity",c.getString(8));
-  section(root,"Occupants",c.isNull(9)?"Unknown":String.valueOf(c.getInt(9)));
-  section(root,"Recorded fatalities",c.isNull(10)?"Unknown":String.valueOf(c.getInt(10)));
+  if(!c.isNull(9))section(root,"Occupants",String.valueOf(c.getInt(9)));
+  if(!c.isNull(10))section(root,"Recorded fatalities",String.valueOf(c.getInt(10)));
   section(root,"Case narrative / investigation summary",c.getString(11));
+  if(!present(c.getString(11)))root.addView(text("The compiled dataset has no narrative for this entry. Consult the original report below.",13,Color.DKGRAY));
   section(root,"Issuing authority / original source",c.getString(13));
   if(c.getInt(14)==0)root.addView(text("Data caveat: At least one field in this record was extracted or enriched using a language model. Verify important figures against the source.",13,Color.rgb(130,70,20)));
   String link=c.getString(12);
