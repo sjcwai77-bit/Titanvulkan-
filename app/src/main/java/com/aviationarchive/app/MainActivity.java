@@ -84,7 +84,7 @@ public class MainActivity extends Activity {
    sql=sql;args.add(String.join(" AND ",terms));
   }
   if(!"All manufacturers".equals(currentMaker)){sql.append(" AND manufacturer=?");args.add(currentMaker);}
-  if(informative!=null&&informative.isChecked()){sql.append(" AND length(trim(coalesce(summary,\'\')))>40");}
+  if(informative!=null&&informative.isChecked()){sql.append(" AND length(trim(coalesce(summary,'')))>40");}
   sql.append(" ORDER BY date DESC, id DESC LIMIT 61 OFFSET ").append(offset);
   Cursor c=null;int shown=0;boolean more=false;
   try{
