@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/aviation-archive.yml'
       - 'app/**'
+      - 'scripts/**'
       - 'settings.gradle'
       - 'build.gradle'
       - 'gradle.properties'
@@ -29,12 +30,39 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install archive importer
+        run: python -m pip install --disable-pip-version-check pyarrow==19.0.1
+      - name: Build complete offline incident database
+        run: python scripts/build_archive.py
       - name: Assemble installable debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Verify offline archive
+        run: |
+          python - <<'PY'
+          import sqlite3
+          db=sqlite3.connect('app/src/main/assets/aviation.db')
+          n=db.execute('select count(*) from incidents').fetchone()[0]
+          print('Offline indexed incident records:',n)
+          assert n>200000
+          for x in ['Boeing','Airbus','Cessna']:
+              n=db.execute('select count(*) from incidents where manufacturer=?',(x,)).fetchone()[0]
+              print(x,n)
+              assert n>0
+          n=db.execute("select count(*) from incidents_fts where incidents_fts match '757'").fetchone()[0]
+          assert n>0, 'Search index does not contain expected aircraft records'
+          print('FTS search records for 757:',n)
+          db.close()
+          PY
       - name: Verify APK
         run: |
           test -s app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | head -8
+      - name: Ensure database is packaged into the APK
+        run: |
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'assets/aviation.db'
       - uses: actions/upload-artifact@v4
         with:
           name: AviationArchive-GREEN-debug-APK
