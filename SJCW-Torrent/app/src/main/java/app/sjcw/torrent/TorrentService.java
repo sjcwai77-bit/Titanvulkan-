@@ -40,9 +40,8 @@ public final class TorrentService extends Service {
    .setContentText("Torrent service running")
    .setOngoing(true).build();
   startForeground(7,n);
-  storage=getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
-  if(storage==null)storage=new File(getFilesDir(),"downloads");
-  storage.mkdirs();
+  storage=new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),"SJCW Torrent");
+  if(hasStorageAccess())storage.mkdirs();
   loadQueue();
   worker.execute(()->{
    try{
@@ -52,6 +51,12 @@ public final class TorrentService extends Service {
    }catch(Throwable e){error="Cannot start engine: "+e.getMessage();}
   });
  }
+ boolean hasStorageAccess(){return Build.VERSION.SDK_INT<30||Environment.isExternalStorageManager();}
+ void retryPending(){worker.execute(()->{
+  if(manager==null||!hasStorageAccess())return;
+  if(!storage.exists()&&!storage.mkdirs()){error="Cannot create Downloads folder";return;}
+  for(Entry e:entries())if(find(e.hash)==null)startTorrent(e);
+ });}
  synchronized void loadQueue(){
   queue.clear();
   String serialized=getSharedPreferences("torrent_queue",MODE_PRIVATE).getString("entries","[]");
@@ -83,6 +88,7 @@ public final class TorrentService extends Service {
   worker.execute(()->{
    try{
     if(manager==null)throw new IOException("Torrent engine is starting");
+    if(!hasStorageAccess())throw new IOException("Allow storage access first so files download directly to Downloads.");
     String hash; String nameHint=friendlyName;
     if(src.startsWith("magnet:?")){
      MagnetParser.Magnet magnet=MagnetParser.parse(src);
@@ -105,6 +111,7 @@ public final class TorrentService extends Service {
  }
  void startTorrent(Entry entry){
   try{
+   if(!hasStorageAccess())throw new IOException("Allow direct storage access first");
    File dir=new File(storage,entry.hash);
    if(!dir.exists()&&!dir.mkdirs())throw new IOException("Cannot create torrent folder");
    if(entry.source.startsWith("magnet:"))manager.download(entry.source,dir,new torrent_flags_t());
