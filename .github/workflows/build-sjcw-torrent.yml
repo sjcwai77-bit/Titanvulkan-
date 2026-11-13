@@ -1,4 +1,4 @@
-name: Build SJCW Torrent APK
+name: Build SJCW Torrent Direct APK
 on:
   push:
     branches: [torrent-client]
@@ -22,19 +22,24 @@ jobs:
           mkdir -p build/magnet-test
           javac -d build/magnet-test SJCW-Torrent/app/src/main/java/app/sjcw/torrent/MagnetParser.java SJCW-Torrent/tests/MagnetParserTest.java
           java -ea -cp build/magnet-test app.sjcw.torrent.MagnetParserTest
+      - name: Verify direct storage implementation
+        run: |
+          grep -q 'Environment.getExternalStoragePublicDirectory' SJCW-Torrent/app/src/main/java/app/sjcw/torrent/TorrentService.java
+          grep -q 'MANAGE_EXTERNAL_STORAGE' SJCW-Torrent/app/src/main/AndroidManifest.xml
+          ! grep -q 'getExternalFilesDir' SJCW-Torrent/app/src/main/java/app/sjcw/torrent/TorrentService.java
       - name: Assemble APK
         run: gradle --no-daemon -p SJCW-Torrent assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: SJCW-Torrent-APK
+          name: SJCW-Torrent-Direct-APK
           path: SJCW-Torrent/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Publish direct APK file
         run: |
           mkdir -p apk
-          cp SJCW-Torrent/app/build/outputs/apk/debug/app-debug.apk apk/SJCW-Torrent-2.1-FIX.apk
+          cp SJCW-Torrent/app/build/outputs/apk/debug/app-debug.apk apk/SJCW-Torrent-2.2-DIRECT.apk
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
           git add apk/SJCW-Torrent-2.1-FIX.apk
-          git commit -m "Publish installable torrent APK [skip ci]"
+          git commit -m "Publish direct-storage torrent APK [skip ci]"
           git push origin HEAD:torrent-client
