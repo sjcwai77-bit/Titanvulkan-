@@ -40,6 +40,6 @@ jobs:
           cp SJCW-Torrent/app/build/outputs/apk/debug/app-debug.apk apk/SJCW-Torrent-2.2-DIRECT.apk
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add apk/SJCW-Torrent-2.1-FIX.apk
+          git add apk/SJCW-Torrent-2.2-DIRECT.apk
           git commit -m "Publish direct-storage torrent APK [skip ci]"
           git push origin HEAD:torrent-client
