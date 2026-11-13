@@ -22,7 +22,15 @@ public class MainActivity extends Activity {
  @Override public void onCreate(Bundle b){super.onCreate(b);
   getWindow().setStatusBarColor(bg); getWindow().setNavigationBarColor(bg);
   ScrollView sc=new ScrollView(this);root=new LinearLayout(this);root.setPadding(20,20,20,24);root.setOrientation(1);root.setBackgroundColor(bg);sc.addView(root);setContentView(sc);
-  root.addView(label("SJCW TORRENT 2.1",28));root.addView(label("Magnet parser fix • Build 2.1.0 • New separate app",13));root.addView(label("Archive + community search • Magnet links • BitTorrent",13));
+  root.addView(label("SJCW TORRENT DIRECT",28));root.addView(label("Build 2.2.0 • Downloads directly to phone storage • No duplicate copy",13));root.addView(label("Archive + community search • Magnet links • BitTorrent",13));
+  root.addView(label("Saved directly to Internal storage → Download → SJCW Torrent",13));
+  Button permission=button("Allow direct storage access");root.addView(permission);
+  permission.setOnClickListener(v->{
+   if(Build.VERSION.SDK_INT>=30&&!Environment.isExternalStorageManager()){
+    try{startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,Uri.parse("package:"+getPackageName())));}
+    catch(Exception ex){startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));}
+   }else alert("Direct storage access is already enabled.");
+  });
   query=new EditText(this);query.setSingleLine();query.setTextColor(ink);query.setHintTextColor(0xffA9B6C5);query.setHint("Search torrents or paste a magnet link");root.addView(query);
   LinearLayout controls=new LinearLayout(this);root.addView(controls);
   Button search=button("Search");Button add=button("Add magnet");controls.addView(search,new LinearLayout.LayoutParams(0,-2,1));controls.addView(add,new LinearLayout.LayoutParams(0,-2,1));
@@ -133,6 +141,8 @@ public class MainActivity extends Activity {
   items.removeAllViews();
   TorrentService svc=TorrentService.live;
   if(svc==null){items.addView(label("Starting the download engine…",15));handler.postDelayed(this::refresh,2500);return;}
+  if(Build.VERSION.SDK_INT>=30&&!Environment.isExternalStorageManager())
+   items.addView(label("Enable direct storage access using the button above. Until then, downloads cannot begin.",15));
   if(!TorrentService.error.isEmpty())items.addView(label("Status: "+TorrentService.error,13));
   if(!TorrentService.activity.isEmpty())items.addView(label(TorrentService.activity,14));
   java.util.List<TorrentService.Row> data=svc.rows();
@@ -147,14 +157,8 @@ public class MainActivity extends Activity {
    card.addView(label(percent+"%    "+size(r.done)+" / "+size(r.total),14));
    card.addView(label("Download: "+(r.downloadRate/1024)+" KB/s     Upload: "+(r.uploadRate/1024)+" KB/s",13));
    card.addView(label("Peers: "+r.peers+"     Seeds: "+r.seeds,13));
-   if(r.complete){
-    Button export=button("Save to Downloads");card.addView(export);
-    export.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Save completed files")
-      .setMessage("Move this torrent into Internal storage > Download > SJCW Torrent? The original will only be removed after a verified copy.")
-      .setNegativeButton("Cancel",null).setPositiveButton("Move files",(d,w)->{
-       export.setEnabled(false);svc.export(r.hash,(ok,msg)->runOnUiThread(()->{alert(msg);export.setEnabled(true);refresh();}));
-      }).show());
-   }
+   card.addView(label("Saved directly to Download/SJCW Torrent/"+r.hash,12));
+   if(r.complete)card.addView(label("Completed • Already in Downloads; no copy needed.",14));
    LinearLayout actions=new LinearLayout(this);card.addView(actions);
    Button toggle=button(paused.contains(r.hash)?"Resume":"Pause");actions.addView(toggle,new LinearLayout.LayoutParams(0,-2,1));
    toggle.setOnClickListener(v->{boolean resume=paused.contains(r.hash);svc.pause(r.hash,resume,(ok,msg)->runOnUiThread(()->{if(ok){if(resume)paused.remove(r.hash);else paused.add(r.hash);refresh();}else alert(msg);}));});
@@ -170,5 +174,6 @@ public class MainActivity extends Activity {
   }
   handler.postDelayed(this::refresh,2500);
  }
+ @Override protected void onResume(){super.onResume();TorrentService svc=TorrentService.live;if(svc!=null)svc.retryPending();}
  @Override protected void onDestroy(){handler.removeCallbacksAndMessages(null);io.shutdownNow();searchWorkers.shutdownNow();super.onDestroy();}
 }
